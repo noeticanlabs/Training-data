@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://noeticanlabs.local/schemas/training_example.schema.json",
+  "title": "Noetican Training Example",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "training_example_id",
+    "task",
+    "knowledge_domains",
+    "source_record_ids",
+    "admission",
+    "split_group",
+    "input",
+    "target"
+  ],
+  "properties": {
+    "schema_version": {"const": "0.02"},
+    "training_example_id": {"type": "string", "minLength": 1},
+    "task": {
+      "type": "string",
+      "enum": [
+        "knowledge_retrieval",
+        "question_answering",
+        "multi_turn_dialogue",
+        "mathematical_derivation",
+        "theorem_proving",
+        "proof_audit",
+        "counterexample_search",
+        "claim_status_classification",
+        "research_continuation",
+        "experiment_design",
+        "code_generation",
+        "code_repair",
+        "code_review",
+        "technical_writing",
+        "summarization",
+        "relation_prediction",
+        "sequence_prediction",
+        "grid_signal_sequence"
+      ]
+    },
+    "knowledge_domains": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "source_record_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "source_artifact_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "knowledge_status": {
+      "type": "string",
+      "enum": ["canonical", "verified", "provisional", "negative_example", "superseded_context", "unknown"]
+    },
+    "admission": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending_review", "admitted", "rejected", "quarantined", "superseded_for_training"]
+        },
+        "reviewer": {"type": ["string", "null"]},
+        "reviewed_at": {"type": ["string", "number", "null"]},
+        "reason": {"type": ["string", "null"]},
+        "recipe": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "split": {
+      "type": "string",
+      "enum": ["unassigned", "train", "validation", "test", "holdout"]
+    },
+    "split_group": {"type": "string", "minLength": 1},
+    "input": {
+      "type": "object",
+      "properties": {
+        "system": {"type": ["string", "null"]},
+        "prompt": {"type": ["string", "null"]},
+        "context": {"type": ["string", "null"]},
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["role", "text"],
+            "properties": {
+              "role": {"type": "string"},
+              "text": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "structured": {"type": ["object", "array", "string", "number", "boolean", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "text": {"type": ["string", "null"]},
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["role", "text"],
+            "properties": {
+              "role": {"type": "string"},
+              "text": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "structured": {"type": ["object", "array", "string", "number", "boolean", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "evaluation": {
+      "type": "object",
+      "properties": {
+        "method": {"type": ["string", "null"]},
+        "exact_answer": {"type": ["string", "null"]},
+        "required_claims": {"type": "array", "items": {"type": "string"}},
+        "forbidden_claims": {"type": "array", "items": {"type": "string"}},
+        "tests": {"type": "array", "items": {"type": "string"}},
+        "tolerance": {"type": ["number", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "transform": {
+      "type": "object",
+      "properties": {
+        "pipeline_version": {"type": ["string", "null"]},
+        "recipe_version": {"type": ["string", "null"]},
+        "created_at": {"type": ["string", "number", "null"]},
+        "content_hash": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
