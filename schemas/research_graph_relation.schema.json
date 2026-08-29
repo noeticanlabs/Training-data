@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://noeticanlabs.local/schemas/research_graph_relation.schema.json",
+  "title": "Noetican Research Graph Relation (v0.03)",
+  "description": "Typed, provenance-carrying edge between research graph nodes. The relation C1 -> C2 may itself be an inference; 'basis' records whether the relationship is explicit in the sources or inferred by the extractor. Endpoint-class constraints are enforced by validate_research_graph.py using config/research_graph.json.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "relation_id",
+    "relation_type",
+    "source_node_id",
+    "target_node_id",
+    "source_record_ids",
+    "basis",
+    "review"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.03" },
+    "relation_id": {
+      "type": "string",
+      "pattern": "^relation:[0-9a-f]{24}$",
+      "description": "Deterministic: relation:sha256(source_node_id|relation_type|target_node_id)[:24]."
+    },
+    "relation_type": {
+      "type": "string",
+      "enum": [
+        "depends_on", "supports", "contradicts", "supersedes",
+        "refines", "tests", "falsifies", "repairs", "defines", "uses"
+      ],
+      "description": "Frozen v0.03 vocabulary. Do not extend until these prove insufficient."
+    },
+    "source_node_id": {
+      "type": "string",
+      "pattern": "^graph:(definition|claim|argument|experiment|failure):[0-9a-f]{24}$"
+    },
+    "target_node_id": {
+      "type": "string",
+      "pattern": "^graph:(definition|claim|argument|experiment|failure):[0-9a-f]{24}$"
+    },
+    "source_record_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string" },
+      "description": "Research Database record_ids in which this relationship is grounded."
+    },
+    "basis": {
+      "type": "string",
+      "enum": ["explicit", "inferred"],
+      "description": "explicit = the sources state the relationship; inferred = extractor inference, always review_status pending until reviewed."
+    },
+    "confidence": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Null unless the extraction recipe defines a scoring rule."
+    },
+    "review": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["pending", "approved", "rejected"] },
+        "reviewer": { "type": ["string", "null"] },
+        "reviewed_at": { "type": ["string", "number", "null"] },
+        "notes": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

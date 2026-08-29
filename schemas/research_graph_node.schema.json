@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://noeticanlabs.local/schemas/research_graph_node.schema.json",
+  "title": "Noetican Research Graph Node (v0.03)",
+  "description": "Knowledge/Claim/Dependency graph node. A view/index structure over the Research Database: nodes reference canonical record_ids and never replace them. Automatic truth inference is forbidden; every epistemic/proof status defaults to unknown unless explicit reviewed evidence exists.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "node_type",
+    "node_id",
+    "source_record_ids",
+    "lifecycle",
+    "review"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.03" },
+    "node_type": {
+      "type": "string",
+      "enum": ["definition", "claim", "argument", "experiment", "failure"]
+    },
+    "node_id": {
+      "type": "string",
+      "pattern": "^graph:(definition|claim|argument|experiment|failure):[0-9a-f]{24}$",
+      "description": "Deterministic content address; recomputable via config/research_graph.json id_rules."
+    },
+    "source_record_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string" },
+      "description": "Canonical Research Database record_ids this node is grounded in (e.g. research:message:...)."
+    },
+    "lifecycle": {
+      "type": "string",
+      "enum": ["candidate", "reviewed", "rejected", "superseded"],
+      "description": "Extraction never promotes: everything starts as candidate."
+    },
+    "review": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["unreviewed", "approved", "rejected"] },
+        "reviewer": { "type": ["string", "null"] },
+        "reviewed_at": { "type": ["string", "number", "null"] },
+        "evidence_record_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "notes": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "superseded_by": {
+      "type": ["string", "null"],
+      "description": "node_id of the superseding node, when lifecycle == superseded."
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": { "properties": { "node_type": { "const": "definition" } } },
+      "then": {
+        "required": ["name", "statement", "statement_basis"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "symbol": { "type": ["string", "null"] },
+          "statement": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "node_type": { "const": "claim" } } },
+      "then": {
+        "required": ["statement", "statement_basis", "epistemic_status"],
+        "properties": {
+          "statement": { "type": "string", "minLength": 1 },
+          "epistemic_status": {
+            "enum": [
+              "defined", "derived", "proposed", "conjectured", "proof_sketch",
+              "informally_proved", "machine_checked", "numerically_supported",
+              "simulation_supported", "empirically_supported", "falsified",
+              "blocked", "unresolved", "superseded", "historical", "unknown"
+            ],
+            "description": "Reuses the Research Database epistemic registry. Default unknown."
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "node_type": { "const": "argument" } } },
+      "then": {
+        "required": ["argument_type", "premises", "conclusion", "assumptions",
+                      "proof_status", "verification_method"],
+        "properties": {
+          "argument_type": { "type": "string", "minLength": 1 },
+          "premises": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^graph:(claim|definition):[0-9a-f]{24}$"
+            },
+            "uniqueItems": true
+          },
+          "conclusion": {
+            "type": "string",
+            "pattern": "^graph:claim:[0-9a-f]{24}$"
+          },
+          "assumptions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "proof_status": {
+            "enum": ["unknown", "proof_sketch", "informally_proved", "machine_checked"],
+            "description": "proof_sketch != informal proof != machine-checked proof. Default unknown."
+          },
+          "verification_method": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "node_type": { "const": "experiment" } } },
+      "then": {
+        "required": ["hypothesis", "method", "result", "interpretation", "supports"],
+        "properties": {
+          "hypothesis": {
+            "anyOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "required": ["claim_node_id"],
+                "properties": {
+                  "claim_node_id": { "pattern": "^graph:claim:[0-9a-f]{24}$" }
+                }
+              }
+            ]
+          },
+          "method": { "type": "string", "minLength": 1 },
+          "parameters": {},
+          "result": { "type": "string", "minLength": 1 },
+          "interpretation": { "type": "string", "minLength": 1 },
+          "supports": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^graph:claim:[0-9a-f]{24}$"
+            },
+            "uniqueItems": true,
+            "description": "Experiments support claims; the graph never encodes proves."
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "node_type": { "const": "failure" } } },
+      "then": {
+        "required": ["failed_object", "failure_mode", "diagnosis"],
+        "properties": {
+          "failed_object": {
+            "type": "string",
+            "pattern": "^graph:(definition|claim|argument|experiment):[0-9a-f]{24}$"
+          },
+          "failure_mode": { "type": "string", "minLength": 1 },
+          "counterexample": { "type": ["string", "null"] },
+          "violated_assumption": { "type": ["string", "null"] },
+          "diagnosis": { "type": "string", "minLength": 1 },
+          "resulting_repair": {
+            "type": ["string", "null"],
+            "pattern": "^graph:(definition|claim|argument|experiment):[0-9a-f]{24}$"
+          }
+        }
+      }
+    }
+  ]
+}
