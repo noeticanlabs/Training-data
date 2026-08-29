@@ -4,6 +4,7 @@ data/raw/
 # Pipeline outputs (regenerable, large)
 data/transcripts/
 data/index/
+data/training/
 
 # Logs
 *.log
