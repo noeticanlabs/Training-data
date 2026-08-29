@@ -1,0 +1,114 @@
+{
+  "schema_version": "0.02",
+  "default_admission": "pending_review",
+  "default_split": "unassigned",
+  "exclude_reasoning_from_targets": true,
+  "exclude_do_not_remember": true,
+  "exclude_personal_from_work_views": true,
+  "tasks": {
+    "knowledge_retrieval": {
+      "purpose": "Retrieve canonical or explicitly historical knowledge from the research database.",
+      "default_knowledge_status": ["canonical", "verified"],
+      "evaluation": "source-grounded"
+    },
+    "question_answering": {
+      "purpose": "Answer questions using admitted project knowledge with explicit source lineage.",
+      "default_knowledge_status": ["canonical", "verified"],
+      "evaluation": "required-claims"
+    },
+    "multi_turn_dialogue": {
+      "purpose": "Learn coherent multi-turn interaction while preserving project context and turn order.",
+      "default_knowledge_status": ["canonical", "verified", "provisional"],
+      "evaluation": "conversation"
+    },
+    "mathematical_derivation": {
+      "purpose": "Derive mathematical identities or estimates from declared definitions and assumptions.",
+      "default_knowledge_status": ["verified", "canonical"],
+      "evaluation": "derivation-check"
+    },
+    "theorem_proving": {
+      "purpose": "Produce proofs from formal claims and declared assumptions.",
+      "default_knowledge_status": ["verified", "canonical"],
+      "evaluation": "proof-or-machine-check"
+    },
+    "proof_audit": {
+      "purpose": "Identify invalid steps, missing assumptions, proof debt, or overclaims.",
+      "default_knowledge_status": ["verified", "negative_example", "superseded_context"],
+      "evaluation": "defect-localization"
+    },
+    "counterexample_search": {
+      "purpose": "Attack proposed universal claims and generate or identify falsifying witnesses.",
+      "default_knowledge_status": ["verified", "negative_example"],
+      "evaluation": "witness-check"
+    },
+    "claim_status_classification": {
+      "purpose": "Classify statements by epistemic status without upgrading evidence.",
+      "default_knowledge_status": ["canonical", "verified", "provisional", "negative_example", "superseded_context"],
+      "evaluation": "exact-label"
+    },
+    "research_continuation": {
+      "purpose": "Continue an existing research trajectory while preserving definitions, dependencies, failures, and open debt.",
+      "default_knowledge_status": ["canonical", "verified", "provisional", "negative_example", "superseded_context"],
+      "evaluation": "dependency-and-status"
+    },
+    "experiment_design": {
+      "purpose": "Design minimal tests that distinguish hypotheses without silently changing the system under test.",
+      "default_knowledge_status": ["canonical", "verified", "provisional"],
+      "evaluation": "test-contract"
+    },
+    "code_generation": {
+      "purpose": "Generate implementation from admitted specifications and interfaces.",
+      "default_knowledge_status": ["canonical", "verified"],
+      "evaluation": "tests"
+    },
+    "code_repair": {
+      "purpose": "Repair code while preserving declared behavior and minimizing architectural change.",
+      "default_knowledge_status": ["canonical", "verified", "negative_example"],
+      "evaluation": "tests-and-diff"
+    },
+    "code_review": {
+      "purpose": "Audit implementations for correctness, contract violations, missing tests, and provenance problems.",
+      "default_knowledge_status": ["canonical", "verified", "negative_example"],
+      "evaluation": "defect-localization"
+    },
+    "technical_writing": {
+      "purpose": "Produce precise documents from admitted technical source material without overstating status.",
+      "default_knowledge_status": ["canonical", "verified", "provisional"],
+      "evaluation": "source-faithfulness"
+    },
+    "summarization": {
+      "purpose": "Compress source material while preserving status, dependencies, open questions, and boundaries.",
+      "default_knowledge_status": ["canonical", "verified", "provisional", "negative_example", "superseded_context"],
+      "evaluation": "source-faithfulness"
+    },
+    "relation_prediction": {
+      "purpose": "Infer typed relations such as depends-on, supports, contradicts, supersedes, or derived-from.",
+      "default_knowledge_status": ["canonical", "verified", "provisional", "negative_example", "superseded_context"],
+      "evaluation": "relation-label"
+    },
+    "sequence_prediction": {
+      "purpose": "Predict the next admissible research or computational transition from prior state/history.",
+      "default_knowledge_status": ["canonical", "verified", "provisional"],
+      "evaluation": "transition-contract"
+    },
+    "grid_signal_sequence": {
+      "purpose": "Provide lineage-preserving source sequences for conversion into non-token grid excitation experiments.",
+      "default_knowledge_status": ["canonical", "verified", "provisional"],
+      "evaluation": "reconstruction-and-dynamics"
+    }
+  },
+  "knowledge_domains": [
+    "mathematics",
+    "physics",
+    "formal_methods",
+    "software_engineering",
+    "governed_computation",
+    "grid_dynamics",
+    "ai_ml",
+    "research_methods",
+    "documentation",
+    "maintenance_engineering",
+    "personal",
+    "misc"
+  ]
+}
