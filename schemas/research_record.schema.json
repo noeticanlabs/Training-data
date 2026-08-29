@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://noeticanlabs.local/schemas/research_record.schema.json",
+  "title": "Noetican Research Record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_id",
+    "record_type",
+    "source",
+    "content",
+    "provenance",
+    "epistemic_status",
+    "training_policy"
+  ],
+  "properties": {
+    "schema_version": {"const": "0.02"},
+    "record_id": {"type": "string", "minLength": 1},
+    "record_type": {
+      "type": "string",
+      "enum": [
+        "conversation",
+        "message",
+        "document",
+        "artifact",
+        "definition",
+        "claim",
+        "proof",
+        "experiment",
+        "simulation",
+        "result",
+        "failure",
+        "correction",
+        "note",
+        "code"
+      ]
+    },
+    "title": {"type": ["string", "null"]},
+    "project_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "source": {
+      "type": "object",
+      "required": ["source_type"],
+      "properties": {
+        "source_type": {
+          "type": "string",
+          "enum": ["chatgpt", "codex", "github", "uploaded_file", "document", "manual", "other"]
+        },
+        "conversation_id": {"type": ["string", "null"]},
+        "message_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "artifact_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "source_uri": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "content": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {"type": "string"},
+        "role": {"type": ["string", "null"]},
+        "content_type": {"type": ["string", "null"]},
+        "reasoning": {"type": ["string", "null"]},
+        "images": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["created_at", "source_hash"],
+      "properties": {
+        "created_at": {"type": ["number", "string", "null"]},
+        "updated_at": {"type": ["number", "string", "null"]},
+        "source_hash": {"type": ["string", "null"]},
+        "parent_record_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "model_slugs": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "pipeline_version": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "epistemic_status": {
+      "type": "string",
+      "enum": [
+        "defined",
+        "derived",
+        "proposed",
+        "conjectured",
+        "proof_sketch",
+        "informally_proved",
+        "machine_checked",
+        "numerically_supported",
+        "simulation_supported",
+        "empirically_supported",
+        "falsified",
+        "blocked",
+        "unresolved",
+        "superseded",
+        "historical",
+        "unknown"
+      ]
+    },
+    "relations": {
+      "type": "object",
+      "properties": {
+        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "supports": {"type": "array", "items": {"type": "string"}},
+        "contradicts": {"type": "array", "items": {"type": "string"}},
+        "supersedes": {"type": "array", "items": {"type": "string"}},
+        "superseded_by": {"type": "array", "items": {"type": "string"}},
+        "derived_from": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["public", "internal", "private", "restricted", "unknown"]
+    },
+    "training_policy": {
+      "type": "object",
+      "required": ["default_admission"],
+      "properties": {
+        "default_admission": {
+          "type": "string",
+          "enum": ["pending_review", "admitted", "rejected", "quarantined", "superseded_for_training"]
+        },
+        "do_not_remember": {"type": "boolean"},
+        "contains_reasoning": {"type": "boolean"},
+        "pii_status": {
+          "type": "string",
+          "enum": ["not_scanned", "clear", "flagged", "reviewed"]
+        },
+        "license_status": {
+          "type": "string",
+          "enum": ["owned", "permitted", "restricted", "unknown"]
+        },
+        "notes": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
