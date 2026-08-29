@@ -1,6 +1,8 @@
 # Dual Database Architecture v0.02
 
-**Status:** Defined architecture
+**Status:** Validated implementation (full corpus, 2026-08). The v0.03
+Knowledge/Claim/Dependency graph contract is frozen separately — see
+[`docs/RESEARCH_GRAPH.md`](RESEARCH_GRAPH.md).
 
 This repository serves two different purposes that must remain structurally separate.
 

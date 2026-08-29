@@ -35,6 +35,9 @@ python build_dual_databases.py
 
 # Validate both databases (schemas, lineage, policy, content addressing)
 python validate_databases.py
+
+# Validate the v0.03 research graph contract (and graph files once they exist)
+python validate_research_graph.py
 ```
 
 `build_dual_databases.py` creates:
