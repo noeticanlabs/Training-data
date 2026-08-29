@@ -1,0 +1,137 @@
+{
+  "schema_version": "0.03",
+  "title": "Research Graph v0.03 frozen registry",
+  "description": "Executable contract for the Knowledge/Claim/Dependency graph. This file is normative: validate_research_graph.py enforces everything declared here. Graph nodes and relations are views over the Research Database (data/research_db); they never replace it.",
+
+  "node_types": {
+    "definition": "A formally introduced object, symbol, term, model, operator, quantity, or rule.",
+    "claim": "A statement capable of carrying an epistemic status. C = (S, sigma); sigma defaults to unknown.",
+    "argument": "An inferential transition A: (C_i1..C_ik) -> C_m. Not every derivation is a proof; proof_status stays unknown by default.",
+    "experiment": "E = (H, M, P, R, I). Experiments support claims; the vocabulary has no 'proves' relation.",
+    "failure": "A first-class record of attempt -> failure -> diagnosis -> repair. Research value, not an embarrassment."
+  },
+
+  "relation_types": {
+    "depends_on": {
+      "sources": ["definition", "claim", "argument", "experiment", "failure"],
+      "targets": ["definition", "claim", "argument", "experiment"],
+      "meaning": "The source cannot be stated or evaluated without the target."
+    },
+    "supports": {
+      "sources": ["argument", "experiment"],
+      "targets": ["claim"],
+      "meaning": "Evidence in favor; never proof."
+    },
+    "contradicts": {
+      "sources": ["claim", "argument", "experiment", "failure"],
+      "targets": ["claim"],
+      "meaning": "The source is evidence against the target claim."
+    },
+    "supersedes": {
+      "sources": ["definition", "claim", "argument", "experiment"],
+      "targets": ["definition", "claim", "argument", "experiment"],
+      "meaning": "The source replaces the target as the current best version. Requires symmetric superseded_by handling on the target node."
+    },
+    "refines": {
+      "sources": ["definition", "claim", "argument"],
+      "targets": ["definition", "claim"],
+      "meaning": "The source is a sharper, more precise version of the target without fully replacing it."
+    },
+    "tests": {
+      "sources": ["experiment"],
+      "targets": ["claim"],
+      "meaning": "The experiment was designed to probe the claim."
+    },
+    "falsifies": {
+      "sources": ["experiment", "failure", "argument"],
+      "targets": ["claim"],
+      "meaning": "The source supplies a counterexample or refutation of the target claim."
+    },
+    "repairs": {
+      "sources": ["failure"],
+      "targets": ["definition", "claim", "argument", "experiment"],
+      "meaning": "The failure diagnosis led to a corrected version of the target."
+    },
+    "defines": {
+      "sources": ["definition"],
+      "targets": ["definition", "claim", "argument"],
+      "meaning": "The source definition introduces objects used by the target."
+    },
+    "uses": {
+      "sources": ["claim", "argument", "experiment"],
+      "targets": ["definition"],
+      "meaning": "The source invokes objects introduced by the target definition."
+    }
+  },
+
+  "lifecycle_states": ["candidate", "reviewed", "rejected", "superseded"],
+  "review_statuses": {
+    "node": ["unreviewed", "approved", "rejected"],
+    "relation": ["pending", "approved", "rejected"]
+  },
+
+  "status_vocabularies": {
+    "epistemic_status": "Reuses the Research Database registry in schemas/research_record.schema.json (16 values). Default: unknown.",
+    "proof_status": ["unknown", "proof_sketch", "informally_proved", "machine_checked"],
+    "statement_basis": ["verbatim", "normalized"]
+  },
+
+  "id_rules": {
+    "node": {
+      "pattern": "graph:<node_type>:<sha256(canonical_key)[:24]>",
+      "canonical_key": {
+        "definition": ["name", "statement", "source_record_ids:sorted"],
+        "claim": ["statement", "source_record_ids:sorted"],
+        "argument": ["conclusion", "premises:sorted", "source_record_ids:sorted"],
+        "experiment": ["hypothesis:stringified", "method", "source_record_ids:sorted"],
+        "failure": ["failed_object", "failure_mode", "source_record_ids:sorted"]
+      },
+      "serialization": "json.dumps(key_object, sort_keys=True, ensure_ascii=False)"
+    },
+    "relation": {
+      "pattern": "relation:<sha256(canonical_key)[:24]>",
+      "canonical_key": ["source_node_id", "relation_type", "target_node_id"]
+    },
+    "purpose": "Deterministic, recomputable IDs make re-extraction idempotent: the same claim found across many conversations collapses into one node with many provenance links."
+  },
+
+  "promotion_rules": {
+    "candidate_to_reviewed": {
+      "requires": [
+        "review.status == approved",
+        "review.reviewer is not null",
+        "review.evidence_record_ids is non-empty and all resolve to Research DB records"
+      ],
+      "automatic_promotion": "none",
+      "note": "No extractor, heuristic, or LLM may promote a node or relation. Review is a human-with-evidence act."
+    },
+    "status_promotion": {
+      "requires": "epistemic_status stronger than unknown requires review.evidence_record_ids citing explicit verified evidence (machine-checked proof artifacts, receipts, test results)",
+      "automatic_inference": "forbidden in v0.03"
+    },
+    "supersession": {
+      "requires": [
+        "a supersedes relation from the replacing node to the replaced node",
+        "the replaced node's lifecycle becomes superseded and its superseded_by field points at the replacing node"
+      ]
+    }
+  },
+
+  "statement_policy": {
+    "default": "verbatim",
+    "rule": "statement text must be a verbatim excerpt from the cited source records, or a normalized paraphrase explicitly marked statement_basis=normalized with normalization notes in review.notes."
+  },
+
+  "storage_layout": {
+    "root": "data/research_graph/",
+    "candidate_files": ["candidate_nodes.jsonl", "candidate_relations.jsonl"],
+    "reviewed_files": ["reviewed_nodes.jsonl", "reviewed_relations.jsonl"],
+    "manifest": "manifest.json",
+    "note": "All files are gitignored views/index structures over the Research DB, not a third archive."
+  },
+
+  "pipeline": {
+    "flow": ["research_db", "candidate_extraction", "candidate_graph", "review", "canonical_graph"],
+    "current_stage": "contract frozen; candidate_extraction not started"
+  }
+}
