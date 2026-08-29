@@ -1,24 +1,77 @@
-# Training-data — Custom Training Dataset from ChatGPT Export
+# Training-data — Research Archive and Governed Training Data
 
 Turned a year of ChatGPT conversations (~1,384 conversations, ~500 MB raw export)
-into a clean, tagged, validated training corpus. All pipeline processing is local;
+into a clean, tagged, validated corpus. All pipeline processing is local;
 raw data stays in `data/raw/` (gitignored).
+
+The repository now separates two distinct data products:
+
+1. **Research Database** — canonical, provenance-preserving history of the work.
+2. **Training Database** — derived, task-oriented examples with explicit admission status.
+
+The governing lineage is:
+
+```text
+raw sources
+  -> normalized transcripts
+    -> canonical Research Database
+      -> reviewed Training Database
+        -> task/model-specific exports
+```
+
+See [`docs/DATA_ARCHITECTURE.md`](docs/DATA_ARCHITECTURE.md) for the full contract.
 
 ## Quick start
 
 ```powershell
-# Regenerate everything from the raw export
+# Regenerate normalized transcripts from the raw export
 python convert_export_to_transcripts.py --raw-dir data/raw --out-dir data/transcripts --index-dir data/index --pii-report --with-codex
 
-# Validate outputs
+# Validate normalized transcript outputs
 python validate_outputs.py
+
+# Build the two governed databases
+python build_dual_databases.py
 ```
 
-## Outputs
+`build_dual_databases.py` creates:
+
+| Database | File | Role |
+|----------|------|------|
+| Research | `data/research_db/records.jsonl` | Canonical research-history records with lineage, reasoning preservation, epistemic status field, and training policy |
+| Research | `data/research_db/manifest.json` | Reproducibility manifest and hashes |
+| Training | `data/training_db/candidates.jsonl` | Derived training candidates; nothing is automatically admitted |
+| Training | `data/training_db/manifest.json` | Candidate counts, hashes, task/admission summary |
+
+Schemas:
+
+- `schemas/research_record.schema.json`
+- `schemas/training_example.schema.json`
+- `config/training_tasks.json`
+
+### Important training boundary
+
+The Research Database is history-preserving. Proposed, failed, superseded, corrected, and verified work may all belong there with explicit status.
+
+The Training Database is selective. A record is not valid training material merely because it exists in project history.
+
+Default training admission states are:
+
+```text
+pending_review
+admitted
+rejected
+quarantined
+superseded_for_training
+```
+
+The first dual-database builder intentionally infers **no theorem/proof truth status** from keywords and admits **nothing automatically**. Specialist task recipes are expected to derive reviewed views from canonical research records.
+
+## Normalized transcript outputs
 
 | File | Description |
 |------|-------------|
-| `data/transcripts/transcripts.jsonl` | All 1,361 clean conversations (69,592 messages, ~54.6 M tokens) |
+| `data/transcripts/transcripts.jsonl` | All 1,361 clean conversations (69,592 messages, ~54.6 M estimated tokens) |
 | `data/transcripts/transcripts_work_only.jsonl` | Work-scope subset (1,120 convos, 54,643 msgs) |
 | `data/transcripts/codex_documents.jsonl` | 42 Codex tasks (user-turn text) |
 | `data/transcripts/stats_report.json` | Pipeline stats: counts, models, drops, tags |
@@ -27,7 +80,7 @@ python validate_outputs.py
 | `data/index/projects.json` | Per-tag rollups (engineering 757, coherence 735, …) |
 | `data/raw/` | Original export shards — DO NOT COMMIT |
 
-## Record schema (one JSON object per line)
+## Normalized transcript record schema
 
 ```json
 {
@@ -55,7 +108,7 @@ python validate_outputs.py
    expect strict alternation.
 3. **Reasoning capture** — `thoughts` / `reasoning_recap` nodes are attached to the
    preceding assistant text message in a separate `reasoning` field (18,755 msgs
-   have reasoning). Drop that field for strict text-only training.
+   have reasoning). The governed Training Database excludes reasoning from targets by default.
 4. **Image parts** — multimodal `image_asset_pointer` parts become an `[image]`
    placeholder and are counted in `images` (1,886 image parts total).
 5. **Filtering** — 23 conversations dropped (`too_few_messages`); empty/whitespace
@@ -64,39 +117,36 @@ python validate_outputs.py
    engineering, coherence, papers, noetica, creative, physics, lean-math, data-ai,
    numerics, math, gr-nr, documentation, personal, misc. `scope` = work/personal/misc.
 
-## Mapping to training formats (not yet applied — decide when needed)
+## Multi-task Training Database
 
-**OpenAI chat fine-tune JSONL:**
-```json
-{"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
-```
-Map: iterate `messages`, use `role`+`text`. Add a system prompt with project context.
+The Training Database is designed to support multiple tasks over the same canonical knowledge rather than creating one monolithic corpus.
 
-**ShareGPT / Vicuna JSONL:**
-```json
-{"conversations": [{"from": "human", "value": "..."}, {"from": "gpt", "value": "..."}]}
-```
-Map: `role=="user"` → `human`, `role=="assistant"` → `gpt`, `text` → `value`.
+The task registry currently includes:
 
-**Alpaca (instruction/response):**
-Take each assistant message as `output`, its preceding user message as `input`,
-and the conversation title as `instruction` hint. Good for single-turn distillation.
+- knowledge retrieval and question answering;
+- multi-turn dialogue;
+- mathematical derivation and theorem proving;
+- proof auditing and counterexample search;
+- claim-status classification;
+- research continuation and experiment design;
+- code generation, repair, and review;
+- technical writing and summarization;
+- relation and sequence prediction;
+- grid-signal sequence experiments.
 
-**HF `datasets` (parquet):**
-Load `transcripts.jsonl` → `load_dataset("json", data_files="...")` → `.to_parquet()`.
-Columns: `conversation_id`, `title`, `tags`, `scope`, `messages` (list of dicts).
+A single Research Database record may support several distinct training examples while all of them retain `source_record_ids` back to the canonical history.
 
-## Training formats (generated by `build_training_formats.py`)
+## Legacy/direct training formats
 
-Regenerate with:
+`build_training_formats.py` currently generates conventional model-training formats directly from normalized transcripts:
+
 ```powershell
 python build_training_formats.py                       # scope=all, seed=42, val 5%
 python build_training_formats.py --scope work          # work-only subset
 python build_training_formats.py --include-reasoning   # keep <thinking> blocks
 ```
 
-Splits are assigned **per conversation** (seed 42, ~5% val) and shared across all
-formats via `data/training/split_manifest.json`, so experiments are comparable.
+Splits are assigned per conversation and shared across formats through `data/training/split_manifest.json`.
 
 | Format | Files | Records (train/val) | ~Tokens |
 |--------|-------|--------------------|---------|
@@ -104,6 +154,8 @@ formats via `data/training/split_manifest.json`, so experiments are comparable.
 | ShareGPT | `data/training/sharegpt/{train,val}.jsonl` | 1293 / 68 | 54.5 M |
 | Alpaca (turn pairs) | `data/training/alpaca/{train,val}.jsonl` | 13,178 / 659 | 25.1 M |
 | HF parquet | `data/training/hf/{train,val}-00000.parquet` | 1293 / 68 | 54.5 M |
+
+These direct exports remain useful for compatibility experiments, but they **bypass the new training-admission layer**. They should therefore be treated as experimental/legacy exports until their input is rewired from raw normalized transcripts to reviewed `data/training_db/` examples.
 
 Details:
 - **OpenAI**: strict `{"messages": [...]}` schema — system prompt first (derived
@@ -115,12 +167,13 @@ Details:
   `context` = tags; capped at 20 pairs per conversation (`--max-pairs-per-conv`).
 - **HF parquet**: columns `conversation_id, title, tags, scope, messages
   (list<struct{role, content}>), num_messages, est_tokens, split`.
-- **Reasoning** is excluded from all formats by default; `--include-reasoning`
+- **Reasoning** is excluded from these formats by default; `--include-reasoning`
   embeds it as a `<thinking>...</thinking>` block inside assistant content.
 - Conversations are trimmed to start with the user prompt and end with an
   assistant response before formatting.
 
-Validate everything with:
+Validate the conventional exports with:
+
 ```powershell
 python validate_training_formats.py
 ```
