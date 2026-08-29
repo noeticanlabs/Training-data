@@ -1,0 +1,26 @@
+{
+  "rules_version": "0.01",
+  "status": "candidate_classifier",
+  "weights": {
+    "legacy_tag": 2.0,
+    "title_keyword": 2.0,
+    "content_keyword": 1.0
+  },
+  "notes": "These rules generate candidate domain assignments only. They do not establish canonical domain membership or epistemic status.",
+  "keywords": {
+    "D01": ["mathematics", "mathematical", "theorem", "lemma", "proof", "pde", "ode", "navier-stokes", "navier stokes", "probability", "topology", "geometry", "algebra", "optimization", "numerical analysis"],
+    "D02": ["physics", "physical", "quantum", "relativity", "electromagnetism", "thermodynamics", "mechanics", "fluid dynamics", "energy", "field theory"],
+    "D03": ["dynamical system", "dynamics", "stability", "control theory", "adaptive control", "state space", "attractor", "bifurcation", "timescale separation", "trajectory"],
+    "D04": ["network science", "complex system", "graph dynamics", "adaptive network", "coupled system", "distributed system", "emergent behavior", "laplacian", "incidence matrix", "node", "edge"],
+    "D05": ["formal verification", "theorem prover", "theorem proving", "proof search", "proof engineering", "lean", "mathlib", "type system", "formal semantics", "machine checked", "verification receipt"],
+    "D06": ["software", "algorithm", "runtime", "code", "repository", "github", "rust", "python", "test suite", "unit test", "api", "cli", "data structure"],
+    "D07": ["artificial intelligence", "machine learning", "neural network", "language model", "llm", "training", "representation learning", "agent", "reasoning system", "associative memory", "emergent computation", "non-llm"],
+    "D08": ["electrical", "power grid", "circuit", "rlc", "resistor", "capacitor", "inductor", "voltage", "current", "signal propagation", "power system"],
+    "D09": ["fluid", "hydrodynamic", "flow network", "transport system", "continuum", "viscosity", "pressure", "flowgrid", "flow grid"],
+    "D10": ["maintenance", "facility", "facilities", "building system", "inspection", "asset management", "reliability", "infrastructure", "work order", "hvac", "plumbing", "housing authority"],
+    "D11": ["dataset", "database", "data pipeline", "knowledge graph", "knowledge base", "provenance", "data lineage", "training corpus", "schema", "indexing", "retrieval", "jsonl", "parquet"],
+    "D12": ["experiment", "validation", "benchmark", "falsification", "ablation", "simulation", "reproducibility", "comparative test", "hypothesis", "numerical evidence", "empirical evidence"],
+    "D13": ["business", "commercialization", "market", "customer", "product strategy", "go to market", "go-to-market", "partnership", "company", "revenue", "pricing", "intellectual property"],
+    "D14": ["education", "training manual", "curriculum", "instruction", "assessment", "workforce development", "teacher", "student", "technical training", "professional education"]
+  }
+}
