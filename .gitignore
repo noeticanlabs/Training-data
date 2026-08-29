@@ -9,6 +9,7 @@ data/training/
 # Dual database outputs (regenerable, local)
 data/research_db/
 data/training_db/
+data/domain_manifest.json
 
 # Logs
 *.log
