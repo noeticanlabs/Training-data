@@ -32,6 +32,9 @@ python validate_outputs.py
 
 # Build the two governed databases
 python build_dual_databases.py
+
+# Validate both databases (schemas, lineage, policy, content addressing)
+python validate_databases.py
 ```
 
 `build_dual_databases.py` creates:
