@@ -1,0 +1,139 @@
+{
+  "registry_version": "0.01",
+  "status": "defined",
+  "governing_rule": "Domain assignments are indexed projections over canonical records. They do not duplicate or redefine canonical content.",
+  "assignment_policy": {
+    "multi_label": true,
+    "primary_domain_required": false,
+    "default_review_status": "candidate",
+    "automatic_assignment_is_canonical": false,
+    "unknown_policy": "Use D00 when no scientific or operational domain has sufficient candidate evidence.",
+    "primary_min_score": 2.0,
+    "secondary_min_score": 1.0,
+    "max_secondary_domains": 5
+  },
+  "domains": [
+    {
+      "domain_id": "D00",
+      "slug": "unclassified",
+      "name": "Unclassified / Pending",
+      "kind": "system_bucket",
+      "description": "Records without sufficient candidate evidence for a substantive domain. This is not a scientific domain.",
+      "subdomains": []
+    },
+    {
+      "domain_id": "D01",
+      "slug": "mathematics",
+      "name": "Mathematics",
+      "kind": "academic",
+      "subdomains": ["analysis", "partial_differential_equations", "ordinary_differential_equations", "probability", "statistics", "geometry", "topology", "algebra", "category_theory", "numerical_analysis", "optimization"]
+    },
+    {
+      "domain_id": "D02",
+      "slug": "physics",
+      "name": "Physics",
+      "kind": "academic",
+      "subdomains": ["classical_mechanics", "electromagnetism", "thermodynamics", "statistical_physics", "fluid_physics", "quantum_theory", "relativity", "mathematical_physics", "computational_physics"]
+    },
+    {
+      "domain_id": "D03",
+      "slug": "dynamical_systems_control",
+      "name": "Dynamical Systems and Control",
+      "kind": "academic",
+      "subdomains": ["dynamical_systems", "nonlinear_dynamics", "stability", "control_theory", "adaptive_control", "state_space_models", "attractor_dynamics", "bifurcation", "timescale_separation"]
+    },
+    {
+      "domain_id": "D04",
+      "slug": "network_complex_systems",
+      "name": "Network and Complex Systems",
+      "kind": "academic",
+      "subdomains": ["graph_dynamics", "network_science", "adaptive_networks", "distributed_systems", "emergent_behavior", "coupled_systems", "complex_systems"]
+    },
+    {
+      "domain_id": "D05",
+      "slug": "formal_methods_theorem_proving",
+      "name": "Formal Methods and Theorem Proving",
+      "kind": "academic",
+      "subdomains": ["formal_verification", "automated_theorem_proving", "proof_engineering", "type_systems", "formal_semantics", "lean", "proof_search", "verification_receipts"]
+    },
+    {
+      "domain_id": "D06",
+      "slug": "computer_science_software_systems",
+      "name": "Computer Science and Software Systems",
+      "kind": "academic_engineering",
+      "subdomains": ["algorithms", "data_structures", "software_architecture", "runtime_systems", "systems_programming", "testing", "verification_infrastructure", "repositories", "developer_tooling"]
+    },
+    {
+      "domain_id": "D07",
+      "slug": "artificial_intelligence_machine_learning",
+      "name": "Artificial Intelligence and Machine Learning",
+      "kind": "academic_engineering",
+      "subdomains": ["machine_learning", "neural_networks", "language_models", "representation_learning", "sequence_learning", "reasoning_systems", "agent_systems", "associative_memory", "emergent_computation", "non_llm_intelligence"]
+    },
+    {
+      "domain_id": "D08",
+      "slug": "electrical_power_systems",
+      "name": "Electrical and Power Systems",
+      "kind": "engineering",
+      "subdomains": ["circuit_theory", "rlc_networks", "electrical_networks", "power_grids", "signal_propagation", "electrical_control", "infrastructure_power", "sensor_actuator_networks"]
+    },
+    {
+      "domain_id": "D09",
+      "slug": "fluid_transport_systems",
+      "name": "Fluid and Transport Systems",
+      "kind": "academic_engineering",
+      "subdomains": ["fluid_mechanics", "transport", "flow_networks", "hydrodynamics", "continuum_models", "fluid_control"]
+    },
+    {
+      "domain_id": "D10",
+      "slug": "infrastructure_maintenance_engineering",
+      "name": "Infrastructure and Maintenance Engineering",
+      "kind": "engineering",
+      "subdomains": ["building_systems", "facilities", "power_infrastructure", "water_infrastructure", "maintenance", "reliability", "inspection", "asset_management", "workforce_operations"]
+    },
+    {
+      "domain_id": "D11",
+      "slug": "data_knowledge_engineering",
+      "name": "Data and Knowledge Engineering",
+      "kind": "engineering",
+      "subdomains": ["datasets", "data_pipelines", "knowledge_bases", "knowledge_graphs", "provenance", "data_lineage", "training_corpora", "retrieval", "indexing", "schema_design"]
+    },
+    {
+      "domain_id": "D12",
+      "slug": "research_methodology_validation",
+      "name": "Research Methodology and Validation",
+      "kind": "cross_domain",
+      "subdomains": ["experimental_design", "numerical_validation", "simulation_methodology", "benchmarking", "falsification", "ablation", "comparative_testing", "evidence_assessment", "reproducibility"]
+    },
+    {
+      "domain_id": "D13",
+      "slug": "business_commercialization",
+      "name": "Business and Commercialization",
+      "kind": "operational",
+      "subdomains": ["product_strategy", "commercialization", "market_analysis", "customer_discovery", "company_strategy", "intellectual_property", "go_to_market", "partnerships"]
+    },
+    {
+      "domain_id": "D14",
+      "slug": "education_workforce_development",
+      "name": "Education and Workforce Development",
+      "kind": "operational",
+      "subdomains": ["technical_training", "maintenance_training", "curriculum", "instruction", "assessment", "workforce_development", "professional_education"]
+    }
+  ],
+  "legacy_tag_candidate_map": {
+    "math": ["D01"],
+    "gr-nr": ["D01", "D02"],
+    "physics": ["D02"],
+    "lean-math": ["D01", "D05"],
+    "numerics": ["D01", "D12"],
+    "data-ai": ["D07", "D11"],
+    "papers": ["D12"],
+    "documentation": ["D11"],
+    "engineering": ["D06", "D10"],
+    "coherence": [],
+    "noetica": [],
+    "creative": [],
+    "personal": [],
+    "misc": []
+  }
+}
