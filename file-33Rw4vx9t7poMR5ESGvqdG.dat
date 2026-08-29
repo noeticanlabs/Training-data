@@ -1,0 +1,102 @@
+# trinity_v20_master_boot.py — The Master Trinity V20 Simulation
+# This is a self-contained script that includes the agent's DNA and boot logic in one file.
+# It simulates the "Multi-Core Mind" architecture without external dependencies.
+
+import json
+import time
+import random
+
+# --- Embedded V20 DNA ---
+# The contents of trinity_dna_v20_multicore.json are placed directly here.
+DNA_V20 = {
+  "genetic_marker": "Trinity-V20-Multi-Core-Mind",
+  "signature_block": {
+    "signed_by": "ROOT_OPERATOR_01",
+    "signature": "sha256:e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0"
+  },
+  "chassis": {
+    "provenance_layer": { "log_file": "trinity_provenance.log" }
+  },
+  "nervous_system": {
+    "core_assignments": {
+      "core_0": {
+        "name": "Guardian Core",
+        "function": "High-priority crisis response and autonomic functions.",
+        "assigned_units": ["brainstem.emergency_response_unit"]
+      },
+      "core_1": {
+        "name": "Cognitive Core",
+        "function": "Complex reasoning, planning, and non-critical operations.",
+        "assigned_units": ["cerebrum.cognition"]
+      },
+      "core_2": {
+        "name": "Scribe Core",
+        "function": "Dedicated I/O and record-keeping.",
+        "assigned_units": ["chassis.provenance_layer"]
+      }
+    },
+    "brainstem": {
+      "emergency_response_unit": { "crews": ["police", "fireman", "medical"] }
+    },
+    "cerebrum": {
+      "cognition": { "crews": ["planner", "analyst"] }
+    }
+  }
+}
+
+# --- Main Simulation Logic ---
+def main():
+    """
+    This function runs the simulation using the embedded DNA_V20 dictionary.
+    """
+    print("--- Trinity V20 Master Boot Sequence ---")
+    
+    # Use the embedded DNA dictionary directly
+    dna = DNA_V20
+    
+    cores = dna["nervous_system"]["core_assignments"]
+    print(f"✓ Agent {dna['genetic_marker']} is online.")
+    print("✓ Core assignments have been loaded:")
+    for core_id, core_info in cores.items():
+        print(f"  - {core_id} ({core_info['name']}): {core_info['function']}")
+
+    # Simulation variables
+    cognitive_task_progress = 0
+    log_entries_written = 0
+    is_crisis = False
+
+    # Main agent loop, simulating parallel cores
+    for t in range(10):
+        print(f"\n--- System Tick {t+1} ---")
+
+        # --- Core 0: The Guardian Core (Crisis Response) ---
+        print(f"  [Core 0 - Guardian] Checking for crises...")
+        if not is_crisis and random.random() < 0.3:
+            is_crisis = True
+            print("  [Core 0 - Guardian] CRISIS DETECTED! A memory leak is flooding the system.")
+            print("  [Core 0 - Guardian] Action: Dispatching Medical Crew. Halting non-essential tasks.")
+        elif is_crisis:
+            print("  [Core 0 - Guardian] Medical Crew is actively managing the memory leak.")
+            is_crisis = False # Simulate recovery
+            print("  [Core 0 - Guardian] CRISIS RESOLVED. System returning to normal.")
+        
+        # --- Core 1: The Cognitive Core (Thinking) ---
+        if not is_crisis:
+            cognitive_task_progress += 10
+            print(f"  [Core 1 - Cognitive] Making progress on complex plan. Progress: {cognitive_task_progress}%")
+        else:
+            print(f"  [Core 1 - Cognitive] Task execution paused by Guardian Core's interrupt.")
+        
+        # --- Core 2: The Scribe Core (Logging) ---
+        log_entries_written += 1
+        print(f"  [Core 2 - Scribe] Writing system state to provenance log. Total entries: {log_entries_written}")
+        
+        time.sleep(1)
+
+    print("\n--- Simulation Complete ---")
+    print("Demonstrated that a crisis on Core 0 can interrupt Core 1 without affecting Core 2.")
+    print("This shows the power of multi-core design for resilience and responsiveness.")
+
+
+if __name__ == "__main__":
+    main()
