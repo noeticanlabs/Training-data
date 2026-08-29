@@ -6,6 +6,10 @@ data/transcripts/
 data/index/
 data/training/
 
+# Dual database outputs (regenerable, local)
+data/research_db/
+data/training_db/
+
 # Logs
 *.log
 __pycache__/
