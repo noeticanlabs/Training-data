@@ -1,0 +1,11 @@
+# Raw export data (never commit)
+data/raw/
+
+# Pipeline outputs (regenerable, large)
+data/transcripts/
+data/index/
+
+# Logs
+*.log
+__pycache__/
+*.pyc
