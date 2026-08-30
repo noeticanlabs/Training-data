@@ -10,6 +10,9 @@ data/training/
 data/research_db/
 data/research_graph/
 data/training_db/
+data/domain_manifest.json
+data/domain_structural_report.json
+data/domain_calibration_report.json
 
 # Logs
 *.log

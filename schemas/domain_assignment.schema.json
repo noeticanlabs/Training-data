@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://noeticanlabs.local/schemas/domain_assignment.schema.json",
+  "title": "Noetican Domain Assignment",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "assignment_id",
+    "registry_version",
+    "subject_type",
+    "subject_id",
+    "primary_domain_id",
+    "primary_domain_candidates",
+    "domain_ids",
+    "secondary_domain_ids",
+    "cross_domain",
+    "assignment_method",
+    "review_status",
+    "classifier_version",
+    "evidence",
+    "scores"
+  ],
+  "properties": {
+    "schema_version": {"const": "0.02"},
+    "assignment_id": {"type": "string", "minLength": 1},
+    "registry_version": {"const": "0.01"},
+    "subject_type": {
+      "type": "string",
+      "enum": ["research_record", "training_example"]
+    },
+    "subject_id": {"type": "string", "minLength": 1},
+    "primary_domain_id": {
+      "type": ["string", "null"],
+      "pattern": "^D(0[0-9]|1[0-4])$"
+    },
+    "primary_domain_candidates": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^D(0[0-9]|1[0-4])$"},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "domain_ids": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^D(0[0-9]|1[0-4])$"},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "secondary_domain_ids": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^D(0[0-9]|1[0-4])$"},
+      "uniqueItems": true
+    },
+    "cross_domain": {"type": "boolean"},
+    "assignment_method": {
+      "type": "string",
+      "enum": ["source_declared", "rule_based", "model_extracted", "human_reviewed", "inherited"]
+    },
+    "review_status": {
+      "type": "string",
+      "enum": ["candidate", "reviewed", "canonical", "rejected"]
+    },
+    "classifier_version": {"type": "string", "minLength": 1},
+    "scores": {
+      "type": "object",
+      "patternProperties": {
+        "^D(0[0-9]|1[0-4])$": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "value", "domain_id", "weight"],
+        "properties": {
+          "kind": {"type": "string", "enum": ["legacy_tag", "keyword", "inherited_source"]},
+          "value": {"type": "string"},
+          "domain_id": {"type": "string", "pattern": "^D(0[0-9]|1[0-4])$"},
+          "weight": {"type": "number", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "source_hash": {"type": ["string", "null"]},
+    "created_at": {"type": ["string", "null"]},
+    "notes": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}
