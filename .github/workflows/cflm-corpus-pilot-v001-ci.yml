@@ -13,7 +13,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Python availability
         run: python3 --version
-      - name: Compile pilot and bridge scripts
-        run: python3 -m py_compile export_cflm_teacher_data_v001.py build_cflm_corpus_pilot_v001.py _selftest_cflm_corpus_pilot_v001.py
+      - name: Compile pilot, bridge, and review scripts
+        run: >-
+          python3 -m py_compile
+          export_cflm_teacher_data_v001.py
+          build_cflm_corpus_pilot_v001.py
+          prepare_cflm_pilot_review_v001.py
+          apply_cflm_pilot_review_v001.py
+          _selftest_cflm_corpus_pilot_v001.py
+          _selftest_cflm_pilot_review_v001.py
       - name: Run governed pilot selector self-test
         run: python3 _selftest_cflm_corpus_pilot_v001.py
+      - name: Run pilot review workflow self-test
+        run: python3 _selftest_cflm_pilot_review_v001.py
