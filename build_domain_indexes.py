@@ -96,12 +96,16 @@ def select_domains(scores: dict[str, float], policy: dict) -> tuple[
     primary_min = float(policy.get("primary_min_score", 2.0))
     secondary_min = float(policy.get("secondary_min_score", 1.0))
     max_secondary = int(policy.get("max_secondary_domains", 5))
+    allow_fallback = bool(policy.get("allow_fallback_primary", True))
 
     ranked = sorted(
         ((domain_id, score) for domain_id, score in scores.items() if domain_id != "D00"),
         key=lambda item: (-item[1], item[0]),
     )
-    if not ranked or ranked[0][1] < primary_min:
+    if not ranked:
+        return "D00", ["D00"], ["D00"], []
+    if ranked[0][1] < primary_min and not (
+            allow_fallback and ranked[0][1] >= secondary_min):
         return "D00", ["D00"], ["D00"], []
 
     top_score = ranked[0][1]
@@ -136,9 +140,9 @@ def classify_research_record(record: dict, registry: dict, rules: dict,
 
     raw_tags = list(record.get("project_ids") or []) + list(record.get("tags") or [])
     tags = sorted({str(tag) for tag in raw_tags if tag and not str(tag).startswith("scope:")})
-    for tag in tags:
-        for domain_id in legacy_map.get(tag, []):
-            add_evidence(scores, evidence, "legacy_tag", tag, domain_id, legacy_weight)
+    tag_domains = {domain_id for tag in tags for domain_id in legacy_map.get(tag, [])}
+    for domain_id in sorted(tag_domains):
+        add_evidence(scores, evidence, "legacy_tag", "tag:" + domain_id, domain_id, legacy_weight)
 
     title = str(record.get("title") or "").casefold()
     content = str((record.get("content") or {}).get("text") or "").casefold()

@@ -1,8 +1,8 @@
 {
-  "rules_version": "0.02",
+  "rules_version": "0.05",
   "status": "candidate_classifier",
   "weights": {
-    "legacy_tag": 2.0,
+    "legacy_tag": 1.0,
     "title_keyword": 2.0,
     "content_keyword": 1.0
   },

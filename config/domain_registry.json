@@ -11,7 +11,8 @@
     "primary_min_score": 2.0,
     "secondary_min_score": 1.0,
     "max_secondary_domains": 5,
-    "primary_tie_policy": "mark_ambiguous"
+    "primary_tie_policy": "mark_ambiguous",
+    "allow_fallback_primary": true
   },
   "domains": [
     {"domain_id": "D00", "slug": "unclassified", "name": "Unclassified / Pending", "kind": "system_bucket", "description": "Records without sufficient candidate evidence for a substantive domain. This is not a scientific domain.", "subdomains": []},
@@ -32,10 +33,10 @@
   ],
   "legacy_tag_candidate_map": {
     "math": ["D01"],
-    "gr-nr": ["D01", "D02"],
+    "gr-nr": ["D02"],
     "physics": ["D02"],
-    "lean-math": ["D01", "D05"],
-    "numerics": ["D01", "D12"],
+    "lean-math": ["D05"],
+    "numerics": ["D12"],
     "data-ai": ["D07", "D11"],
     "papers": [],
     "documentation": [],
