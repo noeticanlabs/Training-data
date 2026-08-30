@@ -9,14 +9,13 @@ The repository now separates two distinct data products:
 1. **Research Database** — canonical, provenance-preserving history of the work.
 2. **Training Database** — derived, task-oriented examples with explicit admission status.
 
-The governing lineage is:
+The repository supports two governed ingress routes:
 
 ```text
-raw sources
-  -> normalized transcripts
-    -> canonical Research Database
-      -> reviewed Training Database
-        -> task/model-specific exports
+raw chat exports -> normalized transcripts -----+
+                                                 +-> canonical Research Database
+structured project archives -> archive importer +       -> reviewed Training Database
+                                                           -> task/model-specific exports
 ```
 
 See [`docs/DATA_ARCHITECTURE.md`](docs/DATA_ARCHITECTURE.md) for the full contract.
@@ -39,6 +38,9 @@ python build_dual_databases.py
 # Validate both databases (schemas, lineage, policy, content addressing)
 python validate_databases.py
 
+# Import a structured non-conversation project archive without inventing chat
+python import_project_archive.py --archive-root <extracted-archive-root> --archive-zip <source.zip> --research-dir <research-output> --training-dir <training-output>
+
 # Validate the v0.04 research graph contract (and graph files once they exist)
 python validate_research_graph.py
 
@@ -54,6 +56,14 @@ python validate_artifact_manifest.py
 | Research | `data/research_db/manifest.json` | Reproducibility manifest and hashes |
 | Training | `data/training_db/candidates.jsonl` | Derived training candidates; nothing is automatically admitted |
 | Training | `data/training_db/manifest.json` | Candidate counts, hashes, task/admission summary |
+
+`import_project_archive.py` is the governed path for heterogeneous archives
+containing documents, source indexes, claims, equations, experiments, summaries,
+and DAT containers. It verifies the archive checksum manifest before and after
+the import, deduplicates identical source bytes by SHA-256 while retaining alias
+paths, preserves historical status labels only as metadata, and emits no
+training candidates. Reconstructed thread summaries remain notes; they are not
+promoted into fabricated user/assistant conversations.
 
 Schemas:
 

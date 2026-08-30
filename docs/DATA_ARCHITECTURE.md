@@ -380,6 +380,29 @@ This makes it possible to answer:
 - Why was it admitted to training?
 - Which evaluation split contains related material?
 
+### Heterogeneous project-archive import
+
+Structured research archives must not be forced through the conversation
+builder. `import_project_archive.py` provides a separate fail-closed ingress
+path for documents, source artifacts, definitions, source claims, equations,
+experiments, results, reconstructed thread summaries, and crosslink notes.
+
+The importer applies these rules:
+
+- verify every file named by `SHA256SUMS.txt` before and after import;
+- deduplicate identical source bytes by full SHA-256 while retaining all paths;
+- preserve verbatim UTF-8 source text when the archive supplies an exact text
+  corpus;
+- map historical theorem and axiom labels to unverified research claims;
+- keep reconstructed thread summaries as notes, never fabricated dialogue;
+- set epistemic status to `unknown` and training admission to `pending_review`;
+- create zero training candidates automatically;
+- preserve the original archive ZIP hash as the root source identity when the
+  ZIP is supplied.
+
+This route makes a project archive reproducible as research evidence without
+claiming that it replaces a missing raw transcript export.
+
 ---
 
 ## 10. Versioning
@@ -446,12 +469,17 @@ ChatGPT exports / source files / repositories / documents
 - candidate admission constrained by every source record policy;
 - semantic graph identity separated from provenance identity;
 - opaque artifact registry added with fail-closed training policy;
+- governed heterogeneous project-archive importer implemented;
+- generic Research Database record validation and zero-candidate manifests
+  supported;
 - synthetic mutation tests implemented for policy, lineage, hashing, graph
   identity, supersession, and legacy-export governance.
 
 ### Open
 
 - rerun the repaired builder and validator on the complete private corpus;
+- obtain the original raw thread export if verbatim conversation reconstruction
+  is required;
 - produce and retain a full-corpus validation receipt;
 - complete artifact provenance, sensitivity, and license review;
 - deduplication / near-duplicate detection;
@@ -462,6 +490,7 @@ ChatGPT exports / source files / repositories / documents
 
 ### Next highest-value task
 
-Run the complete private corpus through the repaired governed builder and
-validator, then retain the manifests and validation receipt. Do not promote any
-candidate until PII, sensitivity, license, and source-policy review all pass.
+Import any available structured project archives into the Research Database,
+then separately run the complete private transcript corpus when it becomes
+available. Retain both manifests and never promote a candidate until PII,
+sensitivity, license, and source-policy review all pass.

@@ -123,20 +123,29 @@ def check_manifest(db_dir, records_name, count_key):
     check(manifest.get(key) == digest,
           "manifest %s mismatch for %s" % (key, records_name))
     expected = manifest.get(count_key)
-    check(isinstance(expected, int) and expected > 0,
+    minimum = 0 if count_key == "candidate_count" else 1
+    check(isinstance(expected, int) and expected >= minimum,
           "manifest %s missing/invalid" % count_key)
     return manifest, expected
+
+
+GENERIC_RESEARCH_TYPES = {
+    "document", "artifact", "definition", "claim", "proof", "experiment",
+    "simulation", "result", "failure", "correction", "note", "code",
+}
+
 
 def validate_research(args, validator, expected_count):
     path = os.path.join(args.research_dir, "records.jsonl")
     record_ids = set()
     research_policies = {}
     schema_checked = 0
-    header_count = message_count = rejected_count = 0
+    header_count = message_count = generic_count = rejected_count = 0
     hash_sampler = StableHashSampler(args.hash_sample, args.seed, "research")
     prev_map = {}
     header_ids = {}
     header_policies = {}
+    generic_lineage = []
 
     for line_no, rec in stream_jsonl(path):
         rid = rec.get("record_id")
@@ -151,6 +160,8 @@ def validate_research(args, validator, expected_count):
             header_ids[conv_id] = rid
         elif rtype == "message":
             message_count += 1
+        elif rtype in GENERIC_RESEARCH_TYPES:
+            generic_count += 1
         else:
             fail("unexpected record_type %r at line %d" % (rtype, line_no))
 
@@ -242,12 +253,37 @@ def validate_research(args, validator, expected_count):
                     # header precedes messages in emission order; if missing
                     # here it would have been a real ordering bug
                     fail("unresolved derived_from in %s -> %s" % (rid, d))
+        elif rtype in GENERIC_RESEARCH_TYPES:
+            provenance = rec.get("provenance") or {}
+            hash_basis = provenance.get("source_hash_basis")
+            check(hash_basis == "content.text:utf8",
+                  "generic record %s has unsupported source_hash_basis %r"
+                  % (rid, hash_basis))
+            canonical_payload = (rec.get("content") or {}).get("text", "")
+            hash_sampler.add(
+                rid, provenance.get("source_hash"), canonical_payload)
+            parents = provenance.get("parent_record_ids") or []
+            derived_from = ((rec.get("relations") or {})
+                            .get("derived_from", []))
+            for parent in parents:
+                generic_lineage.append((rid, "parent_record_ids", parent))
+            for source_id in derived_from:
+                generic_lineage.append((rid, "derived_from", source_id))
+            check(rid not in parents,
+                  "generic record cannot parent itself: %s" % rid)
 
-    check(header_count + message_count == expected_count,
+    for rid, relation, target in generic_lineage:
+        check(target in record_ids,
+              "unresolved generic %s in %s -> %s"
+              % (relation, rid, target))
+
+    total_count = header_count + message_count + generic_count
+    check(total_count == expected_count,
           "research record count %d != manifest %s"
-          % (header_count + message_count, expected_count))
+          % (total_count, expected_count))
     hash_checked = hash_sampler.verify("research source")
     STATS.update(research_headers=header_count, research_messages=message_count,
+                 research_generic=generic_count,
                  research_schema_checked=schema_checked,
                  research_hash_verified=hash_checked, rejected=rejected_count)
     return research_policies
@@ -410,8 +446,10 @@ def main(argv=None):
     print("[4/5] cross-database closure: %d source references checked"
           % STATS.get("refs_checked", 0))
     print("[5/5] summary")
-    print("  research_db: %d headers + %d messages (manifest: %d)"
+    print("  research_db: %d headers + %d messages + %d generic records "
+          "(manifest: %d)"
           % (STATS["research_headers"], STATS["research_messages"],
+             STATS.get("research_generic", 0),
              research_manifest.get("record_count")))
     print("  schema-validated: research %d, training %d"
           % (STATS["research_schema_checked"],
@@ -432,5 +470,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
