@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Build ready-to-train dataset formats from cleaned transcripts.
+"""Build legacy training formats directly from cleaned transcripts.
+
+This route bypasses the governed training-candidate admission layer and is
+therefore disabled unless the caller explicitly acknowledges that fact with
+``--unsafe-legacy-transcript-export``. Production exports must originate from
+reviewed, admitted records in the governed training database.
 
 INPUT   (--transcripts)   data/transcripts/transcripts.jsonl
                           data/transcripts/transcripts_work_only.jsonl (with --scope work)
@@ -35,6 +39,7 @@ import collections
 import json
 import os
 import random
+import sys
 import time
 
 CHAR_PER_TOKEN = 3.8  # same heuristic as the transcript converter
@@ -108,9 +113,19 @@ def messages_for_training(rec, include_reasoning):
     """Copy of messages; drops reasoning unless requested."""
     out = []
     for m in rec["messages"]:
-        m2 = {k: v for k, v in m.items() if k != "reasoning"}
+        m2 = (dict(m) if include_reasoning
+              else {k: v for k, v in m.items() if k != "reasoning"})
         out.append(m2)
     return out
+
+
+def message_content(message, include_reasoning):
+    content = message["text"]
+    if (include_reasoning and message["role"] == "assistant"
+            and message.get("reasoning")):
+        content = ("<thinking>\n%s\n</thinking>\n\n%s"
+                   % (message["reasoning"], content))
+    return content
 
 
 def maybe_truncate(msgs, max_turns):
@@ -139,20 +154,16 @@ def to_openai(rec, system, include_reasoning):
     """Strict OpenAI fine-tune schema: only the `messages` key."""
     out = [{"role": "system", "content": system}]
     for m in rec["messages"]:
-        content = m["text"]
-        if (include_reasoning and m["role"] == "assistant"
-                and m.get("reasoning")):
-            content = ("<thinking>\n%s\n</thinking>\n\n%s"
-                       % (m["reasoning"], content))
-        out.append({"role": m["role"], "content": content})
+        out.append({"role": m["role"],
+                    "content": message_content(m, include_reasoning)})
     return {"messages": out}
 
 
-def to_sharegpt(rec, system):
+def to_sharegpt(rec, system, include_reasoning):
     convs = []
     for m in rec["messages"]:
         convs.append({"from": "human" if m["role"] == "user" else "gpt",
-                      "value": m["text"]})
+                      "value": message_content(m, include_reasoning)})
     return {
         "conversations": convs,
         "system": system,
@@ -163,7 +174,7 @@ def to_sharegpt(rec, system):
     }
 
 
-def to_alpaca_pairs(rec, max_pairs):
+def to_alpaca_pairs(rec, max_pairs, include_reasoning):
     """One record per adjacent (user -> assistant) turn pair."""
     title = rec["title"]
     ctx = "tags: %s" % ", ".join(rec.get("tags", []))
@@ -175,7 +186,7 @@ def to_alpaca_pairs(rec, max_pairs):
             pairs.append({
                 "instruction": title,
                 "input": u["text"],
-                "output": a["text"],
+                "output": message_content(a, include_reasoning),
                 "context": ctx,
                 "conversation_id": rec["conversation_id"],
             })
@@ -194,11 +205,7 @@ def hf_rows(records, split_name, include_reasoning):
         toks = 0
         msgs = []
         for m in rec["messages"]:
-            content = m["text"]
-            if (include_reasoning and m["role"] == "assistant"
-                    and m.get("reasoning")):
-                content = ("<thinking>\n%s\n</thinking>\n\n%s"
-                           % (m["reasoning"], content))
+            content = message_content(m, include_reasoning)
             toks += estimate_tokens(content)
             msgs.append({"role": m["role"], "content": content})
         rows.append({
@@ -261,7 +268,23 @@ def main(argv=None):
     ap.add_argument("--include-reasoning", action="store_true",
                     help="keep captured reasoning as <thinking> blocks in "
                          "assistant content (default: dropped)")
+    ap.add_argument(
+        "--unsafe-legacy-transcript-export",
+        action="store_true",
+        help="acknowledge that direct transcript export bypasses governed "
+             "candidate admission (required for this legacy command)",
+    )
     args = ap.parse_args(argv)
+
+    if not args.unsafe_legacy_transcript_export:
+        print(
+            "ERROR: direct transcript export bypasses governed admission. "
+            "Use reviewed, admitted training_db candidates for production, "
+            "or pass --unsafe-legacy-transcript-export for an explicitly "
+            "unsafe legacy experiment.",
+            file=sys.stderr,
+        )
+        return 2
 
     src = ("transcripts_work_only.jsonl" if args.scope == "work"
            else "transcripts.jsonl")
@@ -292,11 +315,21 @@ def main(argv=None):
         json.dump({"generated_at": now_iso(), "source": src_path,
                    "seed": args.seed, "val_ratio": args.val_ratio,
                    "n_conversations": len(records),
-                   "splits": splits}, f, ensure_ascii=False, indent=1)
+                   "splits": splits,
+                   "governance": {
+                       "source_mode": "legacy_transcript",
+                       "unsafe_acknowledged": True,
+                       "admission_filter": "none",
+                   }}, f, ensure_ascii=False, indent=1)
 
     stats = {"generated_at": now_iso(), "source": src_path,
              "scope": args.scope, "seed": args.seed,
              "include_reasoning": args.include_reasoning,
+             "governance": {
+                 "source_mode": "legacy_transcript",
+                 "unsafe_acknowledged": True,
+                 "admission_filter": "none",
+             },
              "max_turns": args.max_turns or None,
              "conversations": {"train": len(by_split["train"]),
                                "val": len(by_split["val"])},
@@ -308,14 +341,16 @@ def main(argv=None):
                 r, make_system_prompt(r, args.system_prompt),
                 args.include_reasoning)),
             ("sharegpt", lambda r: to_sharegpt(
-                r, make_system_prompt(r, args.system_prompt)))):
+                r, make_system_prompt(r, args.system_prompt),
+                args.include_reasoning))):
         fmt_stats = {}
         for split_name, recs in by_split.items():
             out = [builder(r) for r in recs]
             n = write_jsonl(os.path.join(args.out_dir, fmt,
                                          "%s.jsonl" % split_name), out)
             total_msgs = sum(len(r["messages"]) for r in recs)
-            total_toks = sum(sum(estimate_tokens(m["text"])
+            total_toks = sum(sum(estimate_tokens(message_content(
+                                     m, args.include_reasoning))
                                  for m in r["messages"] if m.get("text"))
                              for r in recs)
             fmt_stats[split_name] = {"records": n, "messages": total_msgs,
@@ -327,7 +362,8 @@ def main(argv=None):
     for split_name, recs in by_split.items():
         pairs = []
         for r in recs:
-            pairs.extend(to_alpaca_pairs(r, args.max_pairs_per_conv))
+            pairs.extend(to_alpaca_pairs(
+                r, args.max_pairs_per_conv, args.include_reasoning))
         n = write_jsonl(os.path.join(args.out_dir, "alpaca",
                                      "%s.jsonl" % split_name), pairs)
         alpaca_stats[split_name] = {
@@ -381,6 +417,5 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://noeticanlabs.local/schemas/research_graph_node.schema.json",
-  "title": "Noetican Research Graph Node (v0.03)",
+  "title": "Research Graph Node (v0.04)",
   "description": "Knowledge/Claim/Dependency graph node. A view/index structure over the Research Database: nodes reference canonical record_ids and never replace them. Automatic truth inference is forbidden; every epistemic/proof status defaults to unknown unless explicit reviewed evidence exists.",
   "type": "object",
   "required": [
@@ -13,7 +13,7 @@
     "review"
   ],
   "properties": {
-    "schema_version": { "const": "0.03" },
+    "schema_version": { "const": "0.04" },
     "node_type": {
       "type": "string",
       "enum": ["definition", "claim", "argument", "experiment", "failure"]
@@ -53,7 +53,13 @@
     },
     "superseded_by": {
       "type": ["string", "null"],
+      "pattern": "^graph:(definition|claim|argument|experiment|failure):[0-9a-f]{24}$",
       "description": "node_id of the superseding node, when lifecycle == superseded."
+    },
+    "statement_basis": {
+      "type": "string",
+      "enum": ["verbatim", "normalized"],
+      "description": "Verbatim source excerpt or explicitly reviewed normalization."
     }
   },
   "additionalProperties": true,
@@ -125,13 +131,17 @@
         "properties": {
           "hypothesis": {
             "anyOf": [
-              { "type": "string" },
+              { "type": "string", "minLength": 1 },
               {
                 "type": "object",
                 "required": ["claim_node_id"],
                 "properties": {
-                  "claim_node_id": { "pattern": "^graph:claim:[0-9a-f]{24}$" }
-                }
+                  "claim_node_id": {
+                    "type": "string",
+                    "pattern": "^graph:claim:[0-9a-f]{24}$"
+                  }
+                },
+                "additionalProperties": false
               }
             ]
           },

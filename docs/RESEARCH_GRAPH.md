@@ -1,4 +1,4 @@
-# Research Graph v0.03 — Knowledge / Claim / Dependency Graph
+# Research Graph v0.04: Knowledge / Claim / Dependency Graph
 
 **Status:** Schema frozen. Extraction not started.
 
@@ -80,10 +80,22 @@ Consequences:
 
 - Re-extraction is idempotent: the same claim found in many conversations
   collapses into one node carrying many provenance links.
+- `source_record_ids` are not part of node identity. They are a merged evidence
+  set attached to the semantic object. Adding a new source therefore enriches
+  provenance without creating a second scientific object.
 - A theorem developed across seventeen chats becomes one object.
 - A grid principle appearing in forty conversations becomes one definition with
   forty provenance links.
 - A failed idea remains connected to the exact result that killed it.
+
+### v0.04 method change
+
+v0.04 removes `source_record_ids` from every node canonical key. v0.03 included
+provenance in semantic identity, so identical scientific objects discovered in
+different records could not collapse as specified. Candidate extraction had not
+started when this correction was made, so no graph records require migration.
+Any future extractor must merge provenance sets before emitting one node per
+semantic ID.
 
 ## 4. Lifecycle and promotion
 
@@ -96,10 +108,14 @@ lifecycle: candidate -> reviewed | rejected | superseded
   reviewer, and non-empty `review.evidence_record_ids` resolving to Research DB
   records. `automatic_promotion: none`.
 - Any `epistemic_status` stronger than `unknown` requires the same evidence bar.
-  Automatic truth inference is forbidden in v0.03.
+  Automatic truth inference is forbidden in v0.04.
+- An approved relation also requires a named reviewer and non-empty,
+  Research-Database-resolving `review.evidence_record_ids`.
 - Supersession is structural: a `supersedes` edge from the replacing node, plus
   the replaced node's `lifecycle: superseded` and `superseded_by` pointer.
   History is never deleted; falsified and superseded nodes remain first-class.
+  The edge must be approved with evidence, and the replacement must already be
+  a reviewed node. Pending supersession proposals do not mutate lifecycle state.
 
 ## 5. Why the transition is the valuable unit
 
@@ -129,9 +145,10 @@ what lets them be generated from structured evidence rather than dialogue shape.
 
 ## 7. Verification status
 
-- **v0.02 Research DB:** validated structurally on the complete corpus
-  (70,953 records; schemas, hashes, lineage, closure, policy all pass).
-- **v0.03 graph:** contract frozen; no graph files exist yet.
+- **v0.02 Research DB:** the builder and validator contract have synthetic
+  mutation coverage. A complete private-corpus rerun is required after the
+  current integrity repair before a full-corpus pass may be claimed.
+- **v0.04 graph:** semantic-identity contract frozen; no graph files exist yet.
   `validate_research_graph.py` performs contract self-consistency checks now
   and full graph validation once files appear.
 - **Research claims themselves:** not verified, and not verifiable by this layer.

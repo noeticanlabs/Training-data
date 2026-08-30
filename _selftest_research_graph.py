@@ -15,7 +15,7 @@ SRC = "research:message:689033de-fake-src-1"
 
 def claim(statement, cid):
     rec = {
-        "schema_version": "0.03",
+        "schema_version": "0.04",
         "node_type": "claim",
         "node_id": None,
         "source_record_ids": [SRC],
@@ -43,7 +43,7 @@ def write_graph(dirname, nodes, relations):
 
 def rel(rt, src, tgt):
     rec = {
-        "schema_version": "0.03",
+        "schema_version": "0.04",
         "relation_id": None,
         "relation_type": rt,
         "source_node_id": src,
@@ -59,7 +59,7 @@ def rel(rt, src, tgt):
 
 def experiment(supports_id):
     rec = {
-        "schema_version": "0.03",
+        "schema_version": "0.04",
         "node_type": "experiment",
         "node_id": None,
         "source_record_ids": [SRC],
@@ -78,7 +78,7 @@ def experiment(supports_id):
 
 def failure(failed_id):
     rec = {
-        "schema_version": "0.03",
+        "schema_version": "0.04",
         "node_type": "failure",
         "node_id": None,
         "source_record_ids": [SRC],

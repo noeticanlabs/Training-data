@@ -19,11 +19,10 @@ Exit code 0 = all checks passed.
 from __future__ import annotations
 
 import argparse
+import heapq
 import hashlib
 import json
 import os
-import random
-import sys
 import time
 
 from jsonschema import Draft202012Validator
@@ -31,6 +30,21 @@ from jsonschema import Draft202012Validator
 WD = os.path.dirname(os.path.abspath(__file__))
 FAILURES = []
 STATS = {}
+
+
+SOURCE_ALLOWED_CANDIDATE_STATUSES = {
+    "admitted": {
+        "admitted", "pending_review", "quarantined", "rejected",
+        "superseded_for_training",
+    },
+    "pending_review": {
+        "pending_review", "quarantined", "rejected",
+        "superseded_for_training",
+    },
+    "quarantined": {"quarantined", "rejected"},
+    "rejected": {"rejected"},
+    "superseded_for_training": {"superseded_for_training", "rejected"},
+}
 
 
 def fail(msg):
@@ -55,6 +69,35 @@ def sha256_file(path):
 
 def sha256_text(text):
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+class StableHashSampler:
+    """Keep the exact N lowest SHA-256-ranked records without full buffering."""
+
+    def __init__(self, limit, seed, namespace):
+        self.limit = max(0, int(limit))
+        self.seed = str(seed)
+        self.namespace = namespace
+        self._heap = []
+
+    def add(self, item_id, expected_digest, canonical_payload):
+        if self.limit == 0:
+            return
+        identity = "%s|%s|%s" % (self.seed, self.namespace, item_id)
+        rank = int.from_bytes(hashlib.sha256(identity.encode("utf-8")).digest(),
+                              "big")
+        # The root is the largest selected rank. A lower rank replaces it.
+        entry = (-rank, str(item_id), expected_digest, canonical_payload)
+        if len(self._heap) < self.limit:
+            heapq.heappush(self._heap, entry)
+        elif entry > self._heap[0]:
+            heapq.heapreplace(self._heap, entry)
+
+    def verify(self, label):
+        for _, item_id, expected, payload in sorted(self._heap, reverse=True):
+            check(expected == sha256_text(payload),
+                  "%s hash mismatch: %s" % (label, item_id))
+        return len(self._heap)
 
 
 def stream_jsonl(path):
@@ -86,13 +129,14 @@ def check_manifest(db_dir, records_name, count_key):
 
 def validate_research(args, validator, expected_count):
     path = os.path.join(args.research_dir, "records.jsonl")
-    rng = random.Random(args.seed)
     record_ids = set()
-    schema_checked = hash_checked = 0
+    research_policies = {}
+    schema_checked = 0
     header_count = message_count = rejected_count = 0
-    hash_sample_conv = set(rng.sample(range(100000), args.hash_sample))
-    hash_sample_msg = set(rng.sample(range(1000000), args.hash_sample * 5))
+    hash_sampler = StableHashSampler(args.hash_sample, args.seed, "research")
     prev_map = {}
+    header_ids = {}
+    header_policies = {}
 
     for line_no, rec in stream_jsonl(path):
         rid = rec.get("record_id")
@@ -103,6 +147,8 @@ def validate_research(args, validator, expected_count):
         rtype = rec.get("record_type")
         if rtype == "conversation":
             header_count += 1
+            conv_id = (rec.get("source") or {}).get("conversation_id")
+            header_ids[conv_id] = rid
         elif rtype == "message":
             message_count += 1
         else:
@@ -118,6 +164,29 @@ def validate_research(args, validator, expected_count):
 
         # policy invariants
         policy = rec.get("training_policy") or {}
+        conv_id = (rec.get("source") or {}).get("conversation_id")
+        effective_policy = {
+            "default_admission": policy.get("default_admission"),
+            "do_not_remember": bool(policy.get("do_not_remember")),
+            "pii_status": policy.get("pii_status"),
+            "license_status": policy.get("license_status"),
+            "sensitivity": rec.get("sensitivity"),
+            "record_type": rtype,
+            "conversation_id": conv_id,
+        }
+        research_policies[rid] = effective_policy
+        inherited_fields = {
+            key: effective_policy[key]
+            for key in (
+                "default_admission", "do_not_remember", "pii_status",
+                "license_status", "sensitivity",
+            )
+        }
+        if rtype == "conversation":
+            header_policies[conv_id] = inherited_fields
+        elif rtype == "message":
+            check(header_policies.get(conv_id) == inherited_fields,
+                  "message policy diverges from conversation header: %s" % rid)
         if policy.get("do_not_remember"):
             rejected_count += 1
             check(policy.get("default_admission") == "rejected",
@@ -132,46 +201,43 @@ def validate_research(args, validator, expected_count):
 
         # source_hash spot recompute (deterministic sample)
         if rtype == "conversation":
-            if hash_checked < args.hash_sample and \
-                    hash(rid) % 1000 < args.hash_sample // 2:
-                fp = json.dumps({
-                    "conversation_id": rec["source"]["conversation_id"],
-                    "title": rec.get("title"),
-                    "create_time": rec["provenance"]["created_at"],
-                    "update_time": rec["provenance"]["updated_at"],
-                    "message_ids": rec["source"]["message_ids"],
-                }, ensure_ascii=False, sort_keys=True)
-                check(rec["provenance"]["source_hash"] == sha256_text(fp),
-                      "conversation source_hash mismatch: %s" % rid)
-                hash_checked += 1
+            fp = json.dumps({
+                "conversation_id": rec["source"]["conversation_id"],
+                "title": rec.get("title"),
+                "create_time": rec["provenance"]["created_at"],
+                "update_time": rec["provenance"]["updated_at"],
+                "message_ids": rec["source"]["message_ids"],
+            }, ensure_ascii=False, sort_keys=True)
+            hash_sampler.add(rid, rec["provenance"]["source_hash"], fp)
             check(not rec["provenance"]["parent_record_ids"],
                   "conversation header has parents: %s" % rid)
         elif rtype == "message":
             mid = (rec["source"]["message_ids"] or [None])[0]
-            if hash_checked < args.hash_sample * 5 and \
-                    hash(rid) % 1000 < args.hash_sample:
-                fp = json.dumps({
-                    "conversation_id": rec["source"]["conversation_id"],
-                    "message_id": mid,
-                    "role": rec["content"].get("role"),
-                    "text": rec["content"].get("text"),
-                    "reasoning": rec["content"].get("reasoning"),
-                    "create_time": rec["provenance"]["created_at"],
-                }, ensure_ascii=False, sort_keys=True)
-                check(rec["provenance"]["source_hash"] == sha256_text(fp),
-                      "message source_hash mismatch: %s" % rid)
-                hash_checked += 1
+            fp = json.dumps({
+                "conversation_id": rec["source"]["conversation_id"],
+                "message_id": mid,
+                "role": rec["content"].get("role"),
+                "text": rec["content"].get("text"),
+                "reasoning": rec["content"].get("reasoning"),
+                "create_time": rec["provenance"]["created_at"],
+            }, ensure_ascii=False, sort_keys=True)
+            hash_sampler.add(rid, rec["provenance"]["source_hash"], fp)
 
             # lineage: chain integrity per conversation
             parents = rec["provenance"]["parent_record_ids"]
             check(len(parents) == 1, "message %s parent count != 1" % rid)
             conv_id = rec["source"]["conversation_id"]
-            if conv_id in prev_map:
-                check(prev_map[conv_id] == (parents[0] if parents else None),
-                      "broken message chain in conversation %s at %s"
-                      % (conv_id, rid))
+            expected_parent = prev_map.get(conv_id, header_ids.get(conv_id))
+            check(expected_parent == (parents[0] if parents else None),
+                  "broken message chain in conversation %s at %s"
+                  % (conv_id, rid))
             prev_map[conv_id] = rid
-            for d in (rec.get("relations") or {}).get("derived_from", []):
+            derived_from = ((rec.get("relations") or {})
+                            .get("derived_from", []))
+            check(header_ids.get(conv_id) in derived_from,
+                  "message %s is not derived from its conversation header"
+                  % rid)
+            for d in derived_from:
                 if d not in record_ids:
                     # header precedes messages in emission order; if missing
                     # here it would have been a real ordering bug
@@ -180,16 +246,18 @@ def validate_research(args, validator, expected_count):
     check(header_count + message_count == expected_count,
           "research record count %d != manifest %s"
           % (header_count + message_count, expected_count))
+    hash_checked = hash_sampler.verify("research source")
     STATS.update(research_headers=header_count, research_messages=message_count,
                  research_schema_checked=schema_checked,
                  research_hash_verified=hash_checked, rejected=rejected_count)
-    return record_ids
+    return research_policies
 
-def validate_training(args, validator, expected_count, research_ids):
+def validate_training(args, validator, expected_count, research_policies):
     path = os.path.join(args.training_dir, "candidates.jsonl")
     seen = set()
-    schema_checked = hash_checked = refs_checked = 0
+    schema_checked = refs_checked = 0
     admission_counts = {}
+    hash_sampler = StableHashSampler(args.hash_sample, args.seed, "training")
 
     for line_no, rec in stream_jsonl(path):
         eid = rec.get("training_example_id")
@@ -222,40 +290,83 @@ def validate_training(args, validator, expected_count, research_ids):
         # lineage resolution into research DB
         src_ids = rec.get("source_record_ids") or []
         cid = None
+        source_policies = []
         for src in src_ids:
             refs_checked += 1
             parts = src.split(":")
             if cid is None:
                 cid = parts[2] if len(parts) > 2 else None
-            if src not in research_ids:
+            if src not in research_policies:
                 fail("candidate %s references missing research record %s"
                      % (eid, src))
-                break
+                continue
+            source_policy = research_policies[src]
+            source_cid = source_policy.get("conversation_id")
+            check(source_cid == cid,
+                  "candidate %s crosses conversation boundary via %s"
+                  % (eid, src))
+            source_policies.append((src, source_policy))
 
         check(rec.get("split_group") == "conversation:%s" % cid,
               "split_group mismatch for %s" % eid)
 
-        # content_hash spot recompute (deterministic ~3% sample)
-        if hash_checked < args.hash_sample and \
-                hash(eid) % 1000 < args.hash_sample:
-            fp = json.dumps({
-                "cid": cid,
-                "assistant_mid": src_ids[1].rsplit(":", 1)[-1],
-                "task": rec["task"],
-                "prompt": rec["input"]["prompt"],
-                "target": rec["target"]["text"],
-            }, ensure_ascii=False, sort_keys=True)
-            check(rec["transform"]["content_hash"] == sha256_text(fp),
-                  "candidate content_hash mismatch: %s" % eid)
-            hash_checked += 1
+        # A derived candidate may be more restrictive than its sources, but it
+        # may never silently relax a source record's training policy.
+        for src, source_policy in source_policies:
+            source_status = source_policy.get("default_admission")
+            allowed = SOURCE_ALLOWED_CANDIDATE_STATUSES.get(source_status, set())
+            check(status in allowed,
+                  "candidate %s admission %r relaxes source %s policy %r"
+                  % (eid, status, src, source_status))
+
+        if status == "admitted":
+            for src, source_policy in source_policies:
+                check(not source_policy.get("do_not_remember"),
+                      "admitted candidate %s uses do_not_remember source %s"
+                      % (eid, src))
+                check(source_policy.get("default_admission") == "admitted",
+                      "admitted candidate %s uses non-admitted source %s"
+                      % (eid, src))
+                check(source_policy.get("pii_status") in {"clear", "reviewed"},
+                      "admitted candidate %s uses unreviewed PII source %s"
+                      % (eid, src))
+                check(source_policy.get("license_status") in {"owned", "permitted"},
+                      "admitted candidate %s uses unlicensed source %s"
+                      % (eid, src))
+                check(source_policy.get("sensitivity") in {"public", "internal"},
+                      "admitted candidate %s uses sensitive source %s"
+                      % (eid, src))
+
+        # content_hash spot recompute using the same stable exact-N sampler.
+        check(len(src_ids) >= 2,
+              "candidate %s must cite prompt and target source records" % eid)
+        for source_index in range(min(2, len(source_policies))):
+            src, source_policy = source_policies[source_index]
+            check(source_policy.get("record_type") == "message",
+                  "candidate %s prompt/target source is not a message: %s"
+                  % (eid, src))
+        assistant_mid = (src_ids[1].rsplit(":", 1)[-1]
+                         if len(src_ids) >= 2 else "")
+        fp = json.dumps({
+            "cid": cid,
+            "assistant_mid": assistant_mid,
+            "task": rec["task"],
+            "prompt": rec["input"]["prompt"],
+            "target": rec["target"]["text"],
+        }, ensure_ascii=False, sort_keys=True)
+        hash_sampler.add(eid, (rec.get("transform") or {}).get("content_hash"),
+                         fp)
 
     check(len(seen) == expected_count,
           "candidate count %d != manifest %s" % (len(seen), expected_count))
+    hash_checked = hash_sampler.verify("candidate content")
     STATS.update(candidates=len(seen), candidate_schema_checked=schema_checked,
                  candidate_hash_verified=hash_checked, refs_checked=refs_checked)
     return admission_counts
 
 def main(argv=None):
+    FAILURES.clear()
+    STATS.clear()
     ap = argparse.ArgumentParser(
         description="Validate research_db and training_db against schemas, "
                     "lineage, policy, and content-addressing invariants.")
@@ -284,8 +395,8 @@ def main(argv=None):
     with open(os.path.join(WD, "schemas", "research_record.schema.json"),
               encoding="utf-8") as f:
         research_validator = Draft202012Validator(json.load(f))
-    research_ids = validate_research(args, research_validator,
-                                     research_expected)
+    research_policies = validate_research(args, research_validator,
+                                          research_expected)
 
     # 7. training DB
     print("[3/5] training DB (schema, policy, admission)...")
@@ -293,7 +404,7 @@ def main(argv=None):
               encoding="utf-8") as f:
         training_validator = Draft202012Validator(json.load(f))
     admission_counts = validate_training(args, training_validator,
-                                         training_expected, research_ids)
+                                         training_expected, research_policies)
 
     # summary
     print("[4/5] cross-database closure: %d source references checked"
@@ -321,6 +432,5 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 
 

@@ -1,7 +1,8 @@
 # Dual Database Architecture v0.02
 
-**Status:** Validated implementation (full corpus, 2026-08). The v0.03
-Knowledge/Claim/Dependency graph contract is frozen separately — see
+**Status:** Implemented contract with synthetic mutation coverage. A complete
+private-corpus rerun is required after the current integrity repair. The v0.04
+Knowledge/Claim/Dependency graph contract is frozen separately; see
 [`docs/RESEARCH_GRAPH.md`](RESEARCH_GRAPH.md).
 
 This repository serves two different purposes that must remain structurally separate.
@@ -439,31 +440,28 @@ ChatGPT exports / source files / repositories / documents
 - training admission model defined;
 - multi-task view model defined;
 - privacy and reasoning defaults defined;
-- lineage requirement defined.
+- lineage requirement defined;
+- canonical research and candidate builders implemented;
+- deterministic exact-N content-hash sampling implemented;
+- candidate admission constrained by every source record policy;
+- semantic graph identity separated from provenance identity;
+- opaque artifact registry added with fail-closed training policy;
+- synthetic mutation tests implemented for policy, lineage, hashing, graph
+  identity, supersession, and legacy-export governance.
 
 ### Open
 
-- generate canonical research records from the current transcript pipeline;
-- artifact manifest builder;
+- rerun the repaired builder and validator on the complete private corpus;
+- produce and retain a full-corpus validation receipt;
+- complete artifact provenance, sensitivity, and license review;
 - deduplication / near-duplicate detection;
 - claim and epistemic-status extraction/review workflow;
-- training candidate builder;
 - deterministic leakage-resistant split generator;
 - per-task export recipes;
 - grid-signal training export.
 
 ### Next highest-value task
 
-Implement the schemas and first builder that creates:
-
-```text
-data/research_db/records.jsonl
-```
-
-and
-
-```text
-data/training_db/candidates.jsonl
-```
-
-from the existing normalized transcripts while admitting **nothing automatically** into final training.
+Run the complete private corpus through the repaired governed builder and
+validator, then retain the manifests and validation receipt. Do not promote any
+candidate until PII, sensitivity, license, and source-policy review all pass.

@@ -1,6 +1,6 @@
 {
-  "schema_version": "0.03",
-  "title": "Research Graph v0.03 frozen registry",
+  "schema_version": "0.04",
+  "title": "Research Graph v0.04 semantic-identity registry",
   "description": "Executable contract for the Knowledge/Claim/Dependency graph. This file is normative: validate_research_graph.py enforces everything declared here. Graph nodes and relations are views over the Research Database (data/research_db); they never replace it.",
 
   "node_types": {
@@ -80,11 +80,11 @@
     "node": {
       "pattern": "graph:<node_type>:<sha256(canonical_key)[:24]>",
       "canonical_key": {
-        "definition": ["name", "statement", "source_record_ids:sorted"],
-        "claim": ["statement", "source_record_ids:sorted"],
-        "argument": ["conclusion", "premises:sorted", "source_record_ids:sorted"],
-        "experiment": ["hypothesis:stringified", "method", "source_record_ids:sorted"],
-        "failure": ["failed_object", "failure_mode", "source_record_ids:sorted"]
+        "definition": ["name", "statement"],
+        "claim": ["statement"],
+        "argument": ["conclusion", "premises:sorted"],
+        "experiment": ["hypothesis:stringified", "method"],
+        "failure": ["failed_object", "failure_mode"]
       },
       "serialization": "json.dumps(key_object, sort_keys=True, ensure_ascii=False)"
     },
@@ -92,7 +92,7 @@
       "pattern": "relation:<sha256(canonical_key)[:24]>",
       "canonical_key": ["source_node_id", "relation_type", "target_node_id"]
     },
-    "purpose": "Deterministic, recomputable IDs make re-extraction idempotent: the same claim found across many conversations collapses into one node with many provenance links."
+    "purpose": "Deterministic semantic IDs make re-extraction idempotent: the same normalized scientific object found across many conversations collapses into one node. source_record_ids remain an independently merged provenance set and never change identity."
   },
 
   "promotion_rules": {
@@ -107,7 +107,7 @@
     },
     "status_promotion": {
       "requires": "epistemic_status stronger than unknown requires review.evidence_record_ids citing explicit verified evidence (machine-checked proof artifacts, receipts, test results)",
-      "automatic_inference": "forbidden in v0.03"
+      "automatic_inference": "forbidden in v0.04"
     },
     "supersession": {
       "requires": [
