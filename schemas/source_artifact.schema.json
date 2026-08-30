@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/source_artifact.schema.json",
+  "title": "Source Artifact Registry",
+  "type": "object",
+  "required": ["schema_version", "source_commit", "artifacts"],
+  "properties": {
+    "schema_version": {"const": "0.01"},
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "required": [
+        "artifact_id",
+        "path",
+        "original_filename",
+        "byte_size",
+        "git_blob_sha1",
+        "content_sha256",
+        "media_type",
+        "content_class",
+        "sensitivity",
+        "license_status",
+        "training_allowed",
+        "review_status",
+        "parser",
+        "notes"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "pattern": "^artifact:git-blob:[0-9a-f]{40}$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.).+\\.dat$"
+        },
+        "original_filename": {"type": ["string", "null"]},
+        "byte_size": {"type": "integer", "minimum": 0},
+        "git_blob_sha1": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "content_sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "media_type": {"type": "string", "minLength": 1},
+        "content_class": {
+          "type": "string",
+          "enum": ["image", "executable_source", "formal_source", "unknown"]
+        },
+        "sensitivity": {
+          "type": "string",
+          "enum": ["public", "internal", "private", "restricted", "unknown"]
+        },
+        "license_status": {
+          "type": "string",
+          "enum": ["owned", "permitted", "restricted", "unknown"]
+        },
+        "training_allowed": {"type": "boolean"},
+        "review_status": {
+          "type": "string",
+          "enum": ["unreviewed", "approved", "rejected"]
+        },
+        "parser": {"type": ["string", "null"]},
+        "notes": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    }
+  }
+}

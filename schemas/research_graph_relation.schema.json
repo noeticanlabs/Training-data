@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://noeticanlabs.local/schemas/research_graph_relation.schema.json",
-  "title": "Noetican Research Graph Relation (v0.03)",
+  "title": "Research Graph Relation (v0.04)",
   "description": "Typed, provenance-carrying edge between research graph nodes. The relation C1 -> C2 may itself be an inference; 'basis' records whether the relationship is explicit in the sources or inferred by the extractor. Endpoint-class constraints are enforced by validate_research_graph.py using config/research_graph.json.",
   "type": "object",
   "required": [
@@ -15,7 +15,7 @@
     "review"
   ],
   "properties": {
-    "schema_version": { "const": "0.03" },
+    "schema_version": { "const": "0.04" },
     "relation_id": {
       "type": "string",
       "pattern": "^relation:[0-9a-f]{24}$",
@@ -27,7 +27,7 @@
         "depends_on", "supports", "contradicts", "supersedes",
         "refines", "tests", "falsifies", "repairs", "defines", "uses"
       ],
-      "description": "Frozen v0.03 vocabulary. Do not extend until these prove insufficient."
+      "description": "Frozen v0.04 vocabulary. Do not extend until these prove insufficient."
     },
     "source_node_id": {
       "type": "string",
@@ -62,6 +62,11 @@
         "status": { "enum": ["pending", "approved", "rejected"] },
         "reviewer": { "type": ["string", "null"] },
         "reviewed_at": { "type": ["string", "number", "null"] },
+        "evidence_record_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
         "notes": { "type": ["string", "null"] }
       },
       "additionalProperties": true

@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 """Integrity validation for the training-format outputs in data/training/."""
 from __future__ import annotations
-import json, os, sys
+import argparse
+import json
+import os
 
 WD = os.path.dirname(os.path.abspath(__file__))
 TD = os.path.join(WD, "data", "training")
@@ -60,9 +62,17 @@ def chk_alpaca(r, where):
     check(bool(r.get("input", "").strip()), "%s: empty input" % where)
 
 
-def main():
+def main(argv=None):
+    failures.clear()
+    ap = argparse.ArgumentParser(
+        description="Validate declared legacy training-format outputs.")
+    ap.add_argument("--training-dir", default=TD)
+    args = ap.parse_args(argv)
+    training_dir = args.training_dir
+
     # load split manifest for cross-checks
-    with open(os.path.join(TD, "split_manifest.json"), encoding="utf-8") as f:
+    with open(os.path.join(training_dir, "split_manifest.json"),
+              encoding="utf-8") as f:
         manifest = json.load(f)
     splits = manifest["splits"]
     counts = {"train": sum(1 for v in splits.values() if v == "train"),
@@ -72,12 +82,21 @@ def main():
              manifest["seed"]))
     check(manifest["n_conversations"] == len(splits),
           "manifest count mismatch")
+    governance = manifest.get("governance") or {}
+    check(governance.get("source_mode") == "legacy_transcript",
+          "missing legacy source-mode declaration")
+    check(governance.get("unsafe_acknowledged") is True,
+          "legacy admission bypass was not explicitly acknowledged")
+    check(governance.get("admission_filter") == "none",
+          "legacy admission behavior is not declared")
+    print("Governance: UNSAFE LEGACY TRANSCRIPT EXPORT "
+          "(no admission filter)")
 
     results = {}
     for fmt, checker in (("openai", chk_openai), ("sharegpt", chk_sharegpt),
                          ("alpaca", chk_alpaca)):
         for split in ("train", "val"):
-            path = os.path.join(TD, fmt, "%s.jsonl" % split)
+            path = os.path.join(training_dir, fmt, "%s.jsonl" % split)
             if not os.path.exists(path):
                 failures.append("missing file: %s" % path)
                 continue
@@ -93,7 +112,8 @@ def main():
     try:
         import pyarrow.parquet as pq
         for split in ("train", "val"):
-            path = os.path.join(TD, "hf", "%s-00000.parquet" % split)
+            path = os.path.join(training_dir, "hf",
+                                "%s-00000.parquet" % split)
             if not os.path.exists(path):
                 failures.append("missing file: %s" % path)
                 continue
@@ -115,7 +135,7 @@ def main():
         for f in failures[:20]:
             print("  -", f)
         return 1
-    print("ALL FORMAT CHECKS PASSED")
+    print("ALL FORMAT CHECKS PASSED FOR DECLARED UNSAFE LEGACY EXPORT")
     return 0
 
 

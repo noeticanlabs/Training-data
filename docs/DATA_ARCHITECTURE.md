@@ -1,7 +1,8 @@
 # Dual Database Architecture v0.02
 
-**Status:** Validated implementation (full corpus, 2026-08). The v0.03
-Knowledge/Claim/Dependency graph contract is frozen separately — see
+**Status:** Implemented contract with synthetic mutation coverage. A complete
+private-corpus rerun is required after the current integrity repair. The v0.04
+Knowledge/Claim/Dependency graph contract is frozen separately; see
 [`docs/RESEARCH_GRAPH.md`](RESEARCH_GRAPH.md).
 
 This repository serves two different purposes that must remain structurally separate.
@@ -379,6 +380,29 @@ This makes it possible to answer:
 - Why was it admitted to training?
 - Which evaluation split contains related material?
 
+### Heterogeneous project-archive import
+
+Structured research archives must not be forced through the conversation
+builder. `import_project_archive.py` provides a separate fail-closed ingress
+path for documents, source artifacts, definitions, source claims, equations,
+experiments, results, reconstructed thread summaries, and crosslink notes.
+
+The importer applies these rules:
+
+- verify every file named by `SHA256SUMS.txt` before and after import;
+- deduplicate identical source bytes by full SHA-256 while retaining all paths;
+- preserve verbatim UTF-8 source text when the archive supplies an exact text
+  corpus;
+- map historical theorem and axiom labels to unverified research claims;
+- keep reconstructed thread summaries as notes, never fabricated dialogue;
+- set epistemic status to `unknown` and training admission to `pending_review`;
+- create zero training candidates automatically;
+- preserve the original archive ZIP hash as the root source identity when the
+  ZIP is supplied.
+
+This route makes a project archive reproducible as research evidence without
+claiming that it replaces a missing raw transcript export.
+
 ---
 
 ## 10. Versioning
@@ -439,31 +463,34 @@ ChatGPT exports / source files / repositories / documents
 - training admission model defined;
 - multi-task view model defined;
 - privacy and reasoning defaults defined;
-- lineage requirement defined.
+- lineage requirement defined;
+- canonical research and candidate builders implemented;
+- deterministic exact-N content-hash sampling implemented;
+- candidate admission constrained by every source record policy;
+- semantic graph identity separated from provenance identity;
+- opaque artifact registry added with fail-closed training policy;
+- governed heterogeneous project-archive importer implemented;
+- generic Research Database record validation and zero-candidate manifests
+  supported;
+- synthetic mutation tests implemented for policy, lineage, hashing, graph
+  identity, supersession, and legacy-export governance.
 
 ### Open
 
-- generate canonical research records from the current transcript pipeline;
-- artifact manifest builder;
+- rerun the repaired builder and validator on the complete private corpus;
+- obtain the original raw thread export if verbatim conversation reconstruction
+  is required;
+- produce and retain a full-corpus validation receipt;
+- complete artifact provenance, sensitivity, and license review;
 - deduplication / near-duplicate detection;
 - claim and epistemic-status extraction/review workflow;
-- training candidate builder;
 - deterministic leakage-resistant split generator;
 - per-task export recipes;
 - grid-signal training export.
 
 ### Next highest-value task
 
-Implement the schemas and first builder that creates:
-
-```text
-data/research_db/records.jsonl
-```
-
-and
-
-```text
-data/training_db/candidates.jsonl
-```
-
-from the existing normalized transcripts while admitting **nothing automatically** into final training.
+Import any available structured project archives into the Research Database,
+then separately run the complete private transcript corpus when it becomes
+available. Retain both manifests and never promote a candidate until PII,
+sensitivity, license, and source-policy review all pass.

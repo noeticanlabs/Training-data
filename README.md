@@ -9,14 +9,13 @@ The repository now separates two distinct data products:
 1. **Research Database** — canonical, provenance-preserving history of the work.
 2. **Training Database** — derived, task-oriented examples with explicit admission status.
 
-The governing lineage is:
+The repository supports two governed ingress routes:
 
 ```text
-raw sources
-  -> normalized transcripts
-    -> canonical Research Database
-      -> reviewed Training Database
-        -> task/model-specific exports
+raw chat exports -> normalized transcripts -----+
+                                                 +-> canonical Research Database
+structured project archives -> archive importer +       -> reviewed Training Database
+                                                           -> task/model-specific exports
 ```
 
 See [`docs/DATA_ARCHITECTURE.md`](docs/DATA_ARCHITECTURE.md) for the full contract.
@@ -24,6 +23,9 @@ See [`docs/DATA_ARCHITECTURE.md`](docs/DATA_ARCHITECTURE.md) for the full contra
 ## Quick start
 
 ```powershell
+# Install the reproducible core validation environment
+python -m pip install --requirement requirements.lock
+
 # Regenerate normalized transcripts from the raw export
 python convert_export_to_transcripts.py --raw-dir data/raw --out-dir data/transcripts --index-dir data/index --pii-report --with-codex
 
@@ -36,8 +38,14 @@ python build_dual_databases.py
 # Validate both databases (schemas, lineage, policy, content addressing)
 python validate_databases.py
 
-# Validate the v0.03 research graph contract (and graph files once they exist)
+# Import a structured non-conversation project archive without inventing chat
+python import_project_archive.py --archive-root <extracted-archive-root> --archive-zip <source.zip> --research-dir <research-output> --training-dir <training-output>
+
+# Validate the v0.04 research graph contract (and graph files once they exist)
 python validate_research_graph.py
+
+# Validate opaque source artifact identities and fail-closed reuse policy
+python validate_artifact_manifest.py
 ```
 
 `build_dual_databases.py` creates:
@@ -49,11 +57,24 @@ python validate_research_graph.py
 | Training | `data/training_db/candidates.jsonl` | Derived training candidates; nothing is automatically admitted |
 | Training | `data/training_db/manifest.json` | Candidate counts, hashes, task/admission summary |
 
+`import_project_archive.py` is the governed path for heterogeneous archives
+containing documents, source indexes, claims, equations, experiments, summaries,
+and DAT containers. It verifies the archive checksum manifest before and after
+the import, deduplicates identical source bytes by SHA-256 while retaining alias
+paths, preserves historical status labels only as metadata, and emits no
+training candidates. Reconstructed thread summaries remain notes; they are not
+promoted into fabricated user/assistant conversations.
+
 Schemas:
 
 - `schemas/research_record.schema.json`
 - `schemas/training_example.schema.json`
 - `config/training_tasks.json`
+
+Opaque source artifacts are registered in `artifacts/manifest.json` and governed
+by `schemas/source_artifact.schema.json`. See
+[`docs/LICENSING.md`](docs/LICENSING.md). Format identification and Git identity
+do not grant reuse, execution, or training permission.
 
 ### Important training boundary
 
@@ -72,6 +93,11 @@ superseded_for_training
 ```
 
 The first dual-database builder intentionally infers **no theorem/proof truth status** from keywords and admits **nothing automatically**. Specialist task recipes are expected to derive reviewed views from canonical research records.
+
+Source presence is not evidence of licensing. Generated research records therefore
+start with `license_status: unknown`; an admitted example requires a reviewed
+source policy, acceptable sensitivity, cleared or reviewed PII, and an owned or
+permitted license status.
 
 ## Normalized transcript outputs
 
@@ -144,12 +170,14 @@ A single Research Database record may support several distinct training examples
 
 ## Legacy/direct training formats
 
-`build_training_formats.py` currently generates conventional model-training formats directly from normalized transcripts:
+`build_training_formats.py` generates conventional model-training formats
+directly from normalized transcripts. This path bypasses governed admission, so
+it is fail-closed unless the caller explicitly acknowledges unsafe legacy mode:
 
 ```powershell
-python build_training_formats.py                       # scope=all, seed=42, val 5%
-python build_training_formats.py --scope work          # work-only subset
-python build_training_formats.py --include-reasoning   # keep <thinking> blocks
+python build_training_formats.py --unsafe-legacy-transcript-export
+python build_training_formats.py --unsafe-legacy-transcript-export --scope work
+python build_training_formats.py --unsafe-legacy-transcript-export --include-reasoning
 ```
 
 Splits are assigned per conversation and shared across formats through `data/training/split_manifest.json`.
@@ -161,7 +189,10 @@ Splits are assigned per conversation and shared across formats through `data/tra
 | Alpaca (turn pairs) | `data/training/alpaca/{train,val}.jsonl` | 13,178 / 659 | 25.1 M |
 | HF parquet | `data/training/hf/{train,val}-00000.parquet` | 1293 / 68 | 54.5 M |
 
-These direct exports remain useful for compatibility experiments, but they **bypass the new training-admission layer**. They should therefore be treated as experimental/legacy exports until their input is rewired from raw normalized transcripts to reviewed `data/training_db/` examples.
+These direct exports remain useful for compatibility experiments, but they
+**bypass the training-admission layer**. Their split manifest records
+`source_mode: legacy_transcript`, `unsafe_acknowledged: true`, and
+`admission_filter: none`. They are not governed production exports.
 
 Details:
 - **OpenAI**: strict `{"messages": [...]}` schema — system prompt first (derived
@@ -183,6 +214,17 @@ Validate the conventional exports with:
 ```powershell
 python validate_training_formats.py
 ```
+
+The validator accepts only outputs that explicitly declare this legacy bypass.
+It does not convert an unsafe export into an admitted one.
+
+## Scientific framework
+
+[`docs/SCIENTIFIC_FRAMEWORK.md`](docs/SCIENTIFIC_FRAMEWORK.md) maps the
+implementation to a project-neutral academic framework: observational records,
+evidence objects, semantic claims, provenance, derivation identity, admission
+control, and reproducibility evidence. It also states what each validation layer
+does and does not establish.
 
 ## PII note
 

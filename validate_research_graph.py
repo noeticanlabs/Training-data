@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Contract check + integrity validator for the Research Graph v0.03.
+"""Contract check + integrity validator for the Research Graph v0.04.
 
 Modes
   1. Contract self-consistency (always runs):
@@ -67,26 +67,21 @@ def stream_jsonl(path):
 
 def node_canonical_key(rec):
     t = rec["node_type"]
-    src = sorted(rec["source_record_ids"])
     if t == "definition":
-        return {"name": rec["name"], "statement": rec["statement"],
-                "source_record_ids": src}
+        return {"name": rec["name"], "statement": rec["statement"]}
     if t == "claim":
-        return {"statement": rec["statement"], "source_record_ids": src}
+        return {"statement": rec["statement"]}
     if t == "argument":
         return {"conclusion": rec["conclusion"],
-                "premises": sorted(rec.get("premises", [])),
-                "source_record_ids": src}
+                "premises": sorted(rec.get("premises", []))}
     if t == "experiment":
         hyp = rec["hypothesis"]
         if isinstance(hyp, dict):
             hyp = hyp.get("claim_node_id", "")
-        return {"hypothesis": hyp, "method": rec["method"],
-                "source_record_ids": src}
+        return {"hypothesis": hyp, "method": rec["method"]}
     if t == "failure":
         return {"failed_object": rec["failed_object"],
-                "failure_mode": rec["failure_mode"],
-                "source_record_ids": src}
+                "failure_mode": rec["failure_mode"]}
     raise ValueError("unknown node_type %r" % t)
 
 
@@ -105,6 +100,10 @@ def expected_relation_id(rec):
 
 def contract_check(config, node_schema, rel_schema):
     print("[1/3] contract self-consistency...")
+    check(config["schema_version"]
+          == node_schema["properties"]["schema_version"]["const"]
+          == rel_schema["properties"]["schema_version"]["const"],
+          "graph config and schema versions diverged")
     node_types = set(config["node_types"])
     check(set(node_schema["properties"]["node_type"]["enum"]) == node_types,
           "config node_types != node schema enum")
@@ -116,8 +115,18 @@ def contract_check(config, node_schema, rel_schema):
             for cls in spec[side]:
                 check(cls in node_types,
                       "relation %s %s class %r not a node type" % (rt, side, cls))
-    check(set(config["id_rules"]["node"]["canonical_key"]) == node_types,
+    canonical_rules = config["id_rules"]["node"]["canonical_key"]
+    check(set(canonical_rules) == node_types,
           "id_rules do not cover every node type")
+    expected_rules = {
+        "definition": ["name", "statement"],
+        "claim": ["statement"],
+        "argument": ["conclusion", "premises:sorted"],
+        "experiment": ["hypothesis:stringified", "method"],
+        "failure": ["failed_object", "failure_mode"],
+    }
+    check(canonical_rules == expected_rules,
+          "config canonical keys diverge from semantic ID implementation")
     # epistemic_status enum in node schema matches the research record schema
     research_schema = load_json(os.path.join(WD, "schemas",
                                              "research_record.schema.json"))
@@ -126,24 +135,39 @@ def contract_check(config, node_schema, rel_schema):
         node_schema["allOf"][1]["then"]["properties"]["epistemic_status"]["enum"])
     check(claim_enum == research_enum,
           "claim epistemic_status enum diverged from Research DB registry")
+    statement_enum = set(node_schema["properties"]["statement_basis"]["enum"])
+    check(statement_enum == set(
+        config["status_vocabularies"]["statement_basis"]),
+        "statement_basis enum diverged from graph registry")
     print("  node types: %d | relation types: %d | enums aligned with Research DB"
           % (len(node_types), len(config["relation_types"])))
 
 
-def load_research_ids(path):
+def load_research_records(path):
     if not os.path.exists(path):
         return None
-    return {rec["record_id"] for _, rec in stream_jsonl(path)
-            if "record_id" in rec}
+    return {
+        rec["record_id"]: (rec.get("content") or {}).get("text", "")
+        for _, rec in stream_jsonl(path)
+        if "record_id" in rec
+    }
 
-def validate_graph(args, node_validator, rel_validator, config, research_ids):
+def validate_graph(args, node_validator, rel_validator, config,
+                   research_records):
     print("[2/3] graph validation (candidate files present)...")
     nodes_path = os.path.join(args.graph_dir, "candidate_nodes.jsonl")
     rels_path = os.path.join(args.graph_dir, "candidate_relations.jsonl")
     matrix = config["relation_types"]
     node_types = {}
+    nodes = {}
 
-    if os.path.exists(nodes_path):
+    nodes_exist = os.path.exists(nodes_path)
+    rels_exist = os.path.exists(rels_path)
+    check(nodes_exist == rels_exist,
+          "candidate graph snapshot is incomplete; nodes and relations files "
+          "must either both exist or both be absent")
+
+    if nodes_exist:
         for n, rec in stream_jsonl(nodes_path):
             nid = rec.get("node_id")
             if nid in node_types:
@@ -154,6 +178,7 @@ def validate_graph(args, node_validator, rel_validator, config, research_ids):
                      % (n, errors[0].message[:200]))
                 continue
             node_types[nid] = rec["node_type"]
+            nodes[nid] = rec
             check(nid == expected_node_id(rec),
                   "node_id not deterministic: %s (expected %s)"
                   % (nid, expected_node_id(rec)))
@@ -164,23 +189,61 @@ def validate_graph(args, node_validator, rel_validator, config, research_ids):
                   "superseded node missing superseded_by: %s" % nid)
             review = rec.get("review") or {}
             if review.get("status") == "approved":
+                check(rec["lifecycle"] in {"reviewed", "superseded"},
+                      "approved node %s has incompatible lifecycle %s"
+                      % (nid, rec["lifecycle"]))
+            if review.get("status") == "rejected":
+                check(rec["lifecycle"] == "rejected",
+                      "rejected review on %s has incompatible lifecycle %s"
+                      % (nid, rec["lifecycle"]))
+            if rec["lifecycle"] in {"reviewed", "superseded"}:
+                check(review.get("status") == "approved",
+                      "%s node %s is not approved"
+                      % (rec["lifecycle"], nid))
+            if rec["lifecycle"] == "rejected":
+                check(review.get("status") == "rejected",
+                      "rejected node %s lacks rejected review status" % nid)
+            if review.get("status") == "approved":
                 check(bool(review.get("reviewer")),
                       "approved node %s lacks reviewer" % nid)
                 ev = review.get("evidence_record_ids") or []
                 check(bool(ev), "approved node %s lacks evidence" % nid)
-                if research_ids is not None:
+                if research_records is not None:
                     for e in ev:
-                        check(e in research_ids,
+                        check(e in research_records,
                               "node %s evidence %s unresolved" % (nid, e))
-            if research_ids is not None:
+            if rec["node_type"] == "claim" and \
+                    rec.get("epistemic_status") != "unknown":
+                check(rec["lifecycle"] == "reviewed"
+                      and review.get("status") == "approved"
+                      and bool(review.get("evidence_record_ids")),
+                      "status-bearing claim %s lacks reviewed evidence" % nid)
+            if rec["node_type"] == "argument" and \
+                    rec.get("proof_status") != "unknown":
+                check(rec["lifecycle"] == "reviewed"
+                      and review.get("status") == "approved"
+                      and bool(review.get("evidence_record_ids")),
+                      "status-bearing argument %s lacks reviewed evidence" % nid)
+            if rec.get("statement_basis") == "normalized":
+                check(bool(review.get("notes")),
+                      "normalized statement %s lacks normalization notes" % nid)
+            if research_records is not None:
                 for s in rec.get("source_record_ids", []):
-                    check(s in research_ids,
+                    check(s in research_records,
                           "node %s source %s unresolved" % (nid, s))
+                if rec.get("statement_basis") == "verbatim":
+                    statement = rec.get("statement", "")
+                    source_texts = [research_records.get(s, "")
+                                    for s in rec["source_record_ids"]]
+                    check(any(statement in text for text in source_texts),
+                          "verbatim statement on %s is absent from its sources"
+                          % nid)
         print("  nodes validated: %d" % len(node_types))
     else:
         print("  candidate_nodes.jsonl absent")
 
-    if os.path.exists(rels_path):
+    supersedes_edges = set()
+    if rels_exist:
         seen_rel = set()
         n_rel = 0
         for n, rec in stream_jsonl(rels_path):
@@ -209,16 +272,56 @@ def validate_graph(args, node_validator, rel_validator, config, research_ids):
                       "relation %s: %s cannot target %s"
                       % (rid, rt, node_types[tgt]))
             review = rec.get("review") or {}
+            if rt == "supersedes" and review.get("status") == "approved":
+                supersedes_edges.add((src, tgt))
             if review.get("status") == "approved":
                 check(bool(review.get("reviewer")),
                       "approved relation %s lacks reviewer" % rid)
+                evidence = review.get("evidence_record_ids") or []
+                check(bool(evidence),
+                      "approved relation %s lacks evidence" % rid)
+                if research_records is not None:
+                    for evidence_id in evidence:
+                        check(evidence_id in research_records,
+                              "relation %s evidence %s unresolved"
+                              % (rid, evidence_id))
+                if rt == "supersedes" and src in nodes:
+                    source_review = (nodes[src].get("review") or {})
+                    check(nodes[src].get("lifecycle") == "reviewed"
+                          and source_review.get("status") == "approved",
+                          "approved supersedes relation %s uses an unreviewed "
+                          "replacement" % rid)
+            if research_records is not None:
+                for source_id in rec.get("source_record_ids", []):
+                    check(source_id in research_records,
+                          "relation %s source %s unresolved"
+                          % (rid, source_id))
         print("  relations validated: %d" % n_rel)
     else:
         print("  candidate_relations.jsonl absent")
 
+    for replacement, replaced in supersedes_edges:
+        target = nodes.get(replaced)
+        if target is not None:
+            check(target.get("lifecycle") == "superseded",
+                  "supersedes target %s is not lifecycle=superseded"
+                  % replaced)
+            check(target.get("superseded_by") == replacement,
+                  "supersedes target %s does not point back to %s"
+                  % (replaced, replacement))
+    for nid, rec in nodes.items():
+        if rec.get("lifecycle") == "superseded":
+            replacement = rec.get("superseded_by")
+            check(replacement in nodes,
+                  "superseded node %s replacement is unresolved" % nid)
+            check((replacement, nid) in supersedes_edges,
+                  "superseded node %s lacks matching approved supersedes "
+                  "relation" % nid)
+
 def main(argv=None):
+    FAILURES.clear()
     ap = argparse.ArgumentParser(
-        description="Research Graph v0.03 contract check and validator.")
+        description="Research Graph v0.04 contract check and validator.")
     ap.add_argument("--graph-dir", default="data/research_graph")
     ap.add_argument("--research-db",
                     default=os.path.join("data", "research_db",
@@ -236,12 +339,12 @@ def main(argv=None):
     if os.path.isdir(args.graph_dir):
         node_validator = Draft202012Validator(node_schema)
         rel_validator = Draft202012Validator(rel_schema)
-        research_ids = load_research_ids(
+        research_records = load_research_records(
             os.path.join(WD, args.research_db))
-        if research_ids is None:
+        if research_records is None:
             print("  note: Research DB not found; source resolution skipped")
         validate_graph(args, node_validator, rel_validator, config,
-                       research_ids)
+                       research_records)
     else:
         print("[2/3] graph files not present - contract check only "
               "(extraction not started)")

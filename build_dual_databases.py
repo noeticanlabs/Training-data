@@ -34,6 +34,14 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
+def sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def stable_message_id(conversation_id: str, index: int, message: dict) -> str:
     mid = message.get("message_id")
     if mid:
@@ -138,7 +146,8 @@ def research_records(conversation: dict):
             "do_not_remember": bool(conversation.get("is_do_not_remember")),
             "contains_reasoning": any(bool(m.get("reasoning")) for m in conversation.get("messages") or []),
             "pii_status": "not_scanned",
-            "license_status": "owned",
+            # Source ownership cannot be inferred from transcript presence.
+            "license_status": "unknown",
             "notes": reason,
         },
     }
@@ -197,7 +206,7 @@ def research_records(conversation: dict):
                 "do_not_remember": bool(conversation.get("is_do_not_remember")),
                 "contains_reasoning": bool(reasoning),
                 "pii_status": "not_scanned",
-                "license_status": "owned",
+                "license_status": "unknown",
                 "notes": reason,
             },
         }
@@ -292,7 +301,6 @@ def training_candidates(conversation: dict, context_turns: int = 6):
             "transform": {
                 "pipeline_version": PIPELINE_VERSION,
                 "recipe_version": "dialogue_candidate_v0.01",
-                "created_at": now_iso(),
                 "content_hash": sha256_text(fingerprint),
             },
             "metadata": {
@@ -317,40 +325,57 @@ def main(argv=None) -> int:
 
     research_path = os.path.join(args.research_dir, "records.jsonl")
     candidates_path = os.path.join(args.training_dir, "candidates.jsonl")
+    research_temp = research_path + ".tmp"
+    candidates_temp = candidates_path + ".tmp"
+    source_sha256 = sha256_file(args.transcripts)
 
-    conversations = list(load_jsonl(args.transcripts))
+    conversation_count = 0
 
-    research_count = jsonl_write(
-        research_path,
-        (record for conv in conversations for record in research_records(conv)),
-    )
-    candidate_count = jsonl_write(
-        candidates_path,
-        (record for conv in conversations for record in training_candidates(conv, args.context_turns)),
-    )
+    def all_research_records():
+        nonlocal conversation_count
+        for conversation in load_jsonl(args.transcripts):
+            conversation_count += 1
+            yield from research_records(conversation)
 
     admission_counts = Counter()
     task_counts = Counter()
-    with open(candidates_path, encoding="utf-8") as f:
-        for line in f:
-            record = json.loads(line)
-            admission_counts[record["admission"]["status"]] += 1
-            task_counts[record["task"]] += 1
+
+    def all_training_candidates():
+        for conversation in load_jsonl(args.transcripts):
+            for record in training_candidates(conversation, args.context_turns):
+                admission_counts[record["admission"]["status"]] += 1
+                task_counts[record["task"]] += 1
+                yield record
+
+    try:
+        research_count = jsonl_write(research_temp, all_research_records())
+        candidate_count = jsonl_write(
+            candidates_temp, all_training_candidates())
+        check_sha256 = sha256_file(args.transcripts)
+        if check_sha256 != source_sha256:
+            raise RuntimeError(
+                "source transcripts changed during the two-pass build")
+        os.replace(research_temp, research_path)
+        os.replace(candidates_temp, candidates_path)
+    finally:
+        for temp_path in (research_temp, candidates_temp):
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     manifest_common = {
         "generated_at": now_iso(),
         "schema_version": SCHEMA_VERSION,
         "pipeline_version": PIPELINE_VERSION,
         "source_transcripts": args.transcripts,
-        "source_transcripts_sha256": hashlib.sha256(open(args.transcripts, "rb").read()).hexdigest(),
-        "conversation_count": len(conversations),
+        "source_transcripts_sha256": source_sha256,
+        "conversation_count": conversation_count,
     }
 
     research_manifest = dict(manifest_common)
     research_manifest.update({
         "database": "research",
         "record_count": research_count,
-        "records_sha256": hashlib.sha256(open(research_path, "rb").read()).hexdigest(),
+        "records_sha256": sha256_file(research_path),
         "epistemic_default": "unknown",
     })
     with open(os.path.join(args.research_dir, "manifest.json"), "w", encoding="utf-8") as f:
@@ -360,7 +385,7 @@ def main(argv=None) -> int:
     training_manifest.update({
         "database": "training",
         "candidate_count": candidate_count,
-        "candidates_sha256": hashlib.sha256(open(candidates_path, "rb").read()).hexdigest(),
+        "candidates_sha256": sha256_file(candidates_path),
         "admission_counts": dict(admission_counts),
         "task_counts": dict(task_counts),
         "automatic_admission": False,
