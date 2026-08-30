@@ -1,0 +1,19 @@
+name: CF-LM Corpus Pilot v0.01 Data CI
+
+on:
+  push:
+    branches:
+      - agent/cflm-corpus-pilot-v001
+  workflow_dispatch:
+
+jobs:
+  pilot-data-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python availability
+        run: python3 --version
+      - name: Compile pilot and bridge scripts
+        run: python3 -m py_compile export_cflm_teacher_data_v001.py build_cflm_corpus_pilot_v001.py _selftest_cflm_corpus_pilot_v001.py
+      - name: Run governed pilot selector self-test
+        run: python3 _selftest_cflm_corpus_pilot_v001.py
