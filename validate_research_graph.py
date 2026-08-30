@@ -188,6 +188,14 @@ def validate_graph(args, node_validator, rel_validator, config,
                        and not rec.get("superseded_by")),
                   "superseded node missing superseded_by: %s" % nid)
             review = rec.get("review") or {}
+            if review.get("status") == "approved":
+                check(rec["lifecycle"] in {"reviewed", "superseded"},
+                      "approved node %s has incompatible lifecycle %s"
+                      % (nid, rec["lifecycle"]))
+            if review.get("status") == "rejected":
+                check(rec["lifecycle"] == "rejected",
+                      "rejected review on %s has incompatible lifecycle %s"
+                      % (nid, rec["lifecycle"]))
             if rec["lifecycle"] in {"reviewed", "superseded"}:
                 check(review.get("status") == "approved",
                       "%s node %s is not approved"

@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import build_dual_databases as builder
 import validate_databases as validator
@@ -160,6 +161,43 @@ class DatabaseIntegrityTests(unittest.TestCase):
             os.path.join(self.training, "candidates.jsonl"))
         self.assertTrue(all(
             "created_at" not in rec["transform"] for rec in candidates))
+
+    def test_source_change_does_not_replace_existing_outputs(self):
+        guarded_research = os.path.join(self.root, "guarded-research")
+        guarded_training = os.path.join(self.root, "guarded-training")
+        os.makedirs(guarded_research)
+        os.makedirs(guarded_training)
+        research_path = os.path.join(guarded_research, "records.jsonl")
+        candidates_path = os.path.join(guarded_training, "candidates.jsonl")
+        with open(research_path, "w", encoding="utf-8") as f:
+            f.write("existing research\n")
+        with open(candidates_path, "w", encoding="utf-8") as f:
+            f.write("existing candidates\n")
+
+        source_hash_calls = 0
+        real_sha256_file = builder.sha256_file
+
+        def drifting_hash(path):
+            nonlocal source_hash_calls
+            if path == self.transcripts:
+                source_hash_calls += 1
+                return ("a" if source_hash_calls == 1 else "b") * 64
+            return real_sha256_file(path)
+
+        with mock.patch.object(builder, "sha256_file", side_effect=drifting_hash):
+            with self.assertRaisesRegex(RuntimeError, "changed during"):
+                builder.main([
+                    "--transcripts", self.transcripts,
+                    "--research-dir", guarded_research,
+                    "--training-dir", guarded_training,
+                ])
+
+        with open(research_path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "existing research\n")
+        with open(candidates_path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "existing candidates\n")
+        self.assertFalse(os.path.exists(research_path + ".tmp"))
+        self.assertFalse(os.path.exists(candidates_path + ".tmp"))
 
     def test_sampler_selection_is_order_independent(self):
         def selected(order):

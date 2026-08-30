@@ -153,6 +153,18 @@ class ResearchGraphIntegrityTests(unittest.TestCase):
         self.assertIn("lacks reviewed evidence", output)
         self.assertIn("lacks normalization notes", output)
 
+    def test_review_status_must_match_lifecycle(self):
+        record = claim("Reviewed content")
+        record["review"] = {
+            "status": "approved",
+            "reviewer": "synthetic-reviewer",
+            "evidence_record_ids": [SRC_A],
+        }
+        self.write_graph([record], [])
+        rc, output = self.validate()
+        self.assertEqual(rc, 1)
+        self.assertIn("incompatible lifecycle candidate", output)
+
 
 if __name__ == "__main__":
     unittest.main()

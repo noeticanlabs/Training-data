@@ -325,6 +325,9 @@ def main(argv=None) -> int:
 
     research_path = os.path.join(args.research_dir, "records.jsonl")
     candidates_path = os.path.join(args.training_dir, "candidates.jsonl")
+    research_temp = research_path + ".tmp"
+    candidates_temp = candidates_path + ".tmp"
+    source_sha256 = sha256_file(args.transcripts)
 
     conversation_count = 0
 
@@ -333,8 +336,6 @@ def main(argv=None) -> int:
         for conversation in load_jsonl(args.transcripts):
             conversation_count += 1
             yield from research_records(conversation)
-
-    research_count = jsonl_write(research_path, all_research_records())
 
     admission_counts = Counter()
     task_counts = Counter()
@@ -346,14 +347,27 @@ def main(argv=None) -> int:
                 task_counts[record["task"]] += 1
                 yield record
 
-    candidate_count = jsonl_write(candidates_path, all_training_candidates())
+    try:
+        research_count = jsonl_write(research_temp, all_research_records())
+        candidate_count = jsonl_write(
+            candidates_temp, all_training_candidates())
+        check_sha256 = sha256_file(args.transcripts)
+        if check_sha256 != source_sha256:
+            raise RuntimeError(
+                "source transcripts changed during the two-pass build")
+        os.replace(research_temp, research_path)
+        os.replace(candidates_temp, candidates_path)
+    finally:
+        for temp_path in (research_temp, candidates_temp):
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     manifest_common = {
         "generated_at": now_iso(),
         "schema_version": SCHEMA_VERSION,
         "pipeline_version": PIPELINE_VERSION,
         "source_transcripts": args.transcripts,
-        "source_transcripts_sha256": sha256_file(args.transcripts),
+        "source_transcripts_sha256": source_sha256,
         "conversation_count": conversation_count,
     }
 
