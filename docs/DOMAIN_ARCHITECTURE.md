@@ -115,6 +115,8 @@ Evidence sources are deliberately simple:
 
 Rules produce scores only for candidate organization. They do not establish scientific truth, proof status, or canonical subject identity.
 
+Rule v0.05 counts a substantive legacy domain at most once per record, preserves the contributing tag names in evidence, and permits a provisional primary at the secondary threshold when `allow_fallback_primary` is enabled. The builder and independent validator implement the same fallback contract, and a regression fixture prevents them from drifting apart.
+
 The rule configuration is separated from the registry so vocabulary can change without redefining the domains themselves.
 
 Every assignment records a classifier identity containing the declared rule version and the first 16 hexadecimal characters of the complete rules-file SHA-256 digest. Assignment IDs include that identity. A rule edit therefore produces a new classifier identity and new assignment IDs even when `rules_version` is accidentally left unchanged.

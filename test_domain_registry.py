@@ -47,6 +47,24 @@ class DomainRegistryRegressionTests(unittest.TestCase):
         self.assertEqual(domains, ["D01", "D05", "D12"])
         self.assertEqual(secondary, ["D12"])
 
+    def test_fallback_primary_matches_independent_validator_contract(self) -> None:
+        policy = {**POLICY, "allow_fallback_primary": True}
+        builder_projection = builder.select_domains({"D05": 1.0}, policy)
+        validator_projection = structural.expected_domain_selection({"D05": 1.0}, policy)
+
+        self.assertEqual(builder_projection, ("D05", ["D05"], ["D05"], []))
+        self.assertEqual(validator_projection, builder_projection)
+
+        no_fallback_policy = {**policy, "allow_fallback_primary": False}
+        self.assertEqual(
+            builder.select_domains({"D05": 1.0}, no_fallback_policy),
+            ("D00", ["D00"], ["D00"], []),
+        )
+        self.assertEqual(
+            structural.expected_domain_selection({"D05": 1.0}, no_fallback_policy),
+            ("D00", ["D00"], ["D00"], []),
+        )
+
     def test_all_d00_distribution_fails_calibration(self) -> None:
         stats = {
             "total_assignments": 10,

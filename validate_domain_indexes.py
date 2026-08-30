@@ -326,11 +326,15 @@ def expected_domain_selection(scores: dict[str, float], policy: dict) -> tuple[
     primary_min = float(policy.get("primary_min_score", 2.0))
     secondary_min = float(policy.get("secondary_min_score", 1.0))
     max_secondary = int(policy.get("max_secondary_domains", 5))
+    allow_fallback = bool(policy.get("allow_fallback_primary", True))
     ranked = sorted(
         ((domain_id, score) for domain_id, score in scores.items() if domain_id != "D00"),
         key=lambda item: (-item[1], item[0]),
     )
-    if not ranked or ranked[0][1] < primary_min:
+    if not ranked:
+        return "D00", ["D00"], ["D00"], []
+    if ranked[0][1] < primary_min and not (
+            allow_fallback and ranked[0][1] >= secondary_min):
         return "D00", ["D00"], ["D00"], []
 
     top_score = ranked[0][1]

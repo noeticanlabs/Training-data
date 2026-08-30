@@ -28,7 +28,7 @@
       "min_substantive_membership_domains": 5
     }
   },
-  "notes": "These rules generate candidate domain assignments only. They do not establish canonical domain membership or epistemic status. v0.02 removes generic technical vocabulary that caused semantic collapse in the first full-corpus calibration run.",
+  "notes": "These rules generate candidate domain assignments only. They do not establish canonical domain membership or epistemic status. v0.05 retains the narrower v0.02 vocabulary, removes duplicate same-domain tag scoring, reduces legacy-tag weight, and uses reviewed single-domain mappings for previously forced legacy ties.",
   "keywords": {
     "D01": ["theorem", "lemma", "proof", "partial differential equation", "ordinary differential equation", "pde", "ode", "navier-stokes", "navier stokes", "sobolev", "banach", "hilbert space", "weak solution", "functional analysis", "compactness argument", "probability", "stochastic process", "topology", "category theory", "algebraic", "optimization problem", "numerical analysis"],
     "D02": ["quantum mechanics", "quantum theory", "general relativity", "special relativity", "electromagnetism", "maxwell equations", "thermodynamics", "statistical mechanics", "classical mechanics", "fluid dynamics", "turbulence", "lagrangian mechanics", "hamiltonian mechanics", "quantum field theory"],
