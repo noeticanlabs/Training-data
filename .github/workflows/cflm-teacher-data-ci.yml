@@ -11,10 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Show Python runtime
+        run: python3 --version
       - name: Compile bridge scripts
-        run: python -m py_compile export_cflm_teacher_data_v001.py _selftest_cflm_teacher_data_v001.py
+        run: python3 -m py_compile export_cflm_teacher_data_v001.py _selftest_cflm_teacher_data_v001.py
       - name: Run governed bridge self-test
-        run: python _selftest_cflm_teacher_data_v001.py
+        run: python3 _selftest_cflm_teacher_data_v001.py
