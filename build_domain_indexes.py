@@ -17,8 +17,7 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-DOMAIN_SCHEMA_VERSION = "0.01"
-CLASSIFIER_VERSION = "domain_rules_v0.01"
+DOMAIN_SCHEMA_VERSION = "0.02"
 
 
 def now_iso() -> str:
@@ -50,8 +49,24 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def stable_assignment_id(subject_type: str, subject_id: str, registry_version: str) -> str:
-    payload = f"{subject_type}|{subject_id}|{registry_version}|{CLASSIFIER_VERSION}"
+def canonical_json_sha256(value: dict) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def classifier_identity(rules: dict, rules_digest: str | None = None) -> str:
+    rules_version = str(rules.get("rules_version") or "").strip()
+    if not rules_version:
+        raise ValueError("domain rules must declare a non-empty rules_version")
+    digest = rules_digest or canonical_json_sha256(rules)
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError("rules digest must be a lowercase SHA-256 hexadecimal digest")
+    return f"domain_rules_v{rules_version}_sha256_{digest[:16]}"
+
+
+def stable_assignment_id(subject_type: str, subject_id: str, registry_version: str,
+                         classifier_version: str) -> str:
+    payload = f"{subject_type}|{subject_id}|{registry_version}|{classifier_version}"
     return "domain:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
@@ -76,7 +91,8 @@ def add_evidence(scores: defaultdict[str, float], evidence: list[dict], kind: st
     })
 
 
-def select_domains(scores: dict[str, float], policy: dict) -> tuple[str | None, list[str], list[str]]:
+def select_domains(scores: dict[str, float], policy: dict) -> tuple[
+        str | None, list[str], list[str], list[str]]:
     primary_min = float(policy.get("primary_min_score", 2.0))
     secondary_min = float(policy.get("secondary_min_score", 1.0))
     max_secondary = int(policy.get("max_secondary_domains", 5))
@@ -86,18 +102,30 @@ def select_domains(scores: dict[str, float], policy: dict) -> tuple[str | None, 
         key=lambda item: (-item[1], item[0]),
     )
     if not ranked or ranked[0][1] < primary_min:
-        return "D00", ["D00"], []
+        return "D00", ["D00"], ["D00"], []
 
-    primary = ranked[0][0]
-    secondary = [
-        domain_id for domain_id, score in ranked[1:]
-        if score >= secondary_min
-    ][:max_secondary]
-    return primary, [primary] + secondary, secondary
+    top_score = ranked[0][1]
+    primary_candidates = [
+        domain_id for domain_id, score in ranked
+        if abs(score - top_score) <= 1e-12
+    ]
+    tie_policy = policy.get("primary_tie_policy", "mark_ambiguous")
+    if tie_policy != "mark_ambiguous":
+        raise ValueError(f"unsupported primary_tie_policy: {tie_policy}")
+
+    primary = primary_candidates[0] if len(primary_candidates) == 1 else None
+    remaining = [
+        domain_id for domain_id, score in ranked
+        if domain_id not in set(primary_candidates) and score >= secondary_min
+    ]
+    capacity = max(0, (max_secondary + 1) - len(primary_candidates))
+    secondary = remaining[:capacity]
+    domain_ids = primary_candidates + secondary
+    return primary, primary_candidates, domain_ids, secondary
 
 
 def classify_research_record(record: dict, registry: dict, rules: dict,
-                             compiled_rules: dict) -> dict:
+                             compiled_rules: dict, classifier_version: str) -> dict:
     scores: defaultdict[str, float] = defaultdict(float)
     evidence: list[dict] = []
     weights = rules.get("weights", {})
@@ -123,7 +151,7 @@ def classify_research_record(record: dict, registry: dict, rules: dict,
                 add_evidence(scores, evidence, "keyword", f"content:{term}", domain_id, content_weight)
 
     policy = registry.get("assignment_policy", {})
-    primary, domain_ids, secondary = select_domains(dict(scores), policy)
+    primary, primary_candidates, domain_ids, secondary = select_domains(dict(scores), policy)
     selected = set(domain_ids)
     selected_scores = {
         domain_id: round(score, 6)
@@ -131,34 +159,36 @@ def classify_research_record(record: dict, registry: dict, rules: dict,
         if domain_id in selected and domain_id != "D00"
     }
     selected_evidence = [item for item in evidence if item["domain_id"] in selected]
-    if primary == "D00":
+    if domain_ids == ["D00"]:
         selected_scores = {"D00": 0.0}
         selected_evidence = []
 
     subject_id = str(record["record_id"])
     return {
         "schema_version": DOMAIN_SCHEMA_VERSION,
-        "assignment_id": stable_assignment_id("research_record", subject_id, registry["registry_version"]),
+        "assignment_id": stable_assignment_id(
+            "research_record", subject_id, registry["registry_version"], classifier_version
+        ),
         "registry_version": registry["registry_version"],
         "subject_type": "research_record",
         "subject_id": subject_id,
         "primary_domain_id": primary,
+        "primary_domain_candidates": primary_candidates,
         "domain_ids": domain_ids,
         "secondary_domain_ids": secondary,
         "cross_domain": len([d for d in domain_ids if d != "D00"]) > 1,
         "assignment_method": "rule_based",
         "review_status": "candidate",
-        "classifier_version": CLASSIFIER_VERSION,
+        "classifier_version": classifier_version,
         "scores": selected_scores,
         "evidence": selected_evidence,
         "source_hash": (record.get("provenance") or {}).get("source_hash"),
-        "created_at": now_iso(),
         "notes": "Automatic candidate assignment; not canonical domain membership.",
     }
 
 
 def classify_training_example(example: dict, research_assignments: dict[str, dict],
-                              registry: dict) -> dict:
+                              registry: dict, classifier_version: str) -> dict:
     scores: defaultdict[str, float] = defaultdict(float)
     best_source: dict[str, tuple[float, str]] = {}
 
@@ -177,7 +207,7 @@ def classify_training_example(example: dict, research_assignments: dict[str, dic
                 best_source[domain_id] = (score, str(source_id))
 
     policy = registry.get("assignment_policy", {})
-    primary, domain_ids, secondary = select_domains(dict(scores), policy)
+    primary, primary_candidates, domain_ids, secondary = select_domains(dict(scores), policy)
     selected = set(domain_ids)
     selected_scores = {
         domain_id: round(score, 6)
@@ -195,28 +225,30 @@ def classify_training_example(example: dict, research_assignments: dict[str, dic
             "domain_id": domain_id,
             "weight": round(weight, 6),
         })
-    if primary == "D00":
+    if domain_ids == ["D00"]:
         selected_scores = {"D00": 0.0}
         evidence = []
 
     subject_id = str(example["training_example_id"])
     return {
         "schema_version": DOMAIN_SCHEMA_VERSION,
-        "assignment_id": stable_assignment_id("training_example", subject_id, registry["registry_version"]),
+        "assignment_id": stable_assignment_id(
+            "training_example", subject_id, registry["registry_version"], classifier_version
+        ),
         "registry_version": registry["registry_version"],
         "subject_type": "training_example",
         "subject_id": subject_id,
         "primary_domain_id": primary,
+        "primary_domain_candidates": primary_candidates,
         "domain_ids": domain_ids,
         "secondary_domain_ids": secondary,
         "cross_domain": len([d for d in domain_ids if d != "D00"]) > 1,
         "assignment_method": "inherited",
         "review_status": "candidate",
-        "classifier_version": CLASSIFIER_VERSION,
+        "classifier_version": classifier_version,
         "scores": selected_scores,
         "evidence": evidence,
         "source_hash": (example.get("transform") or {}).get("content_hash"),
-        "created_at": now_iso(),
         "notes": "Inherited from source research-record candidate assignments; not canonical domain membership.",
     }
 
@@ -241,6 +273,7 @@ def close_handles(handles: dict) -> None:
 
 def write_index_entry(handles: dict, assignment: dict) -> None:
     primary = assignment.get("primary_domain_id")
+    primary_candidates = set(assignment.get("primary_domain_candidates") or [])
     for domain_id in assignment.get("domain_ids") or []:
         handle = handles.get(domain_id)
         if handle is None:
@@ -248,13 +281,14 @@ def write_index_entry(handles: dict, assignment: dict) -> None:
         entry = {
             "subject_id": assignment["subject_id"],
             "primary": domain_id == primary,
+            "primary_candidate": domain_id in primary_candidates,
             "review_status": assignment["review_status"],
         }
         handle.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def build_research(research_path: str, output_dir: str, registry: dict, rules: dict,
-                   compiled_rules: dict):
+                   compiled_rules: dict, classifier_version: str):
     os.makedirs(output_dir, exist_ok=True)
     assignment_path = os.path.join(output_dir, "assignments.jsonl")
     index_dir = os.path.join(os.path.dirname(output_dir), "indexes", "domains")
@@ -262,18 +296,26 @@ def build_research(research_path: str, output_dir: str, registry: dict, rules: d
 
     assignment_map: dict[str, dict] = {}
     primary_counts = Counter()
+    primary_candidate_counts = Counter()
     membership_counts = Counter()
     cross_domain_count = 0
+    ambiguous_primary_count = 0
     total = 0
 
     try:
         with open(assignment_path, "w", encoding="utf-8") as out:
             for record in iter_jsonl(research_path):
-                assignment = classify_research_record(record, registry, rules, compiled_rules)
+                assignment = classify_research_record(
+                    record, registry, rules, compiled_rules, classifier_version
+                )
                 out.write(json.dumps(assignment, ensure_ascii=False, sort_keys=True) + "\n")
                 assignment_map[assignment["subject_id"]] = assignment
                 total += 1
-                primary_counts[assignment["primary_domain_id"]] += 1
+                primary_key = assignment["primary_domain_id"] or "AMBIGUOUS"
+                primary_counts[primary_key] += 1
+                ambiguous_primary_count += int(assignment["primary_domain_id"] is None)
+                for domain_id in assignment["primary_domain_candidates"]:
+                    primary_candidate_counts[domain_id] += 1
                 for domain_id in assignment["domain_ids"]:
                     membership_counts[domain_id] += 1
                 cross_domain_count += int(assignment["cross_domain"])
@@ -284,30 +326,40 @@ def build_research(research_path: str, output_dir: str, registry: dict, rules: d
     return assignment_map, assignment_path, index_paths, {
         "total_assignments": total,
         "primary_counts": dict(sorted(primary_counts.items())),
+        "primary_candidate_counts": dict(sorted(primary_candidate_counts.items())),
         "membership_counts": dict(sorted(membership_counts.items())),
         "cross_domain_count": cross_domain_count,
+        "ambiguous_primary_count": ambiguous_primary_count,
     }
 
 
 def build_training(training_path: str, output_dir: str, research_assignments: dict[str, dict],
-                   registry: dict):
+                   registry: dict, classifier_version: str):
     os.makedirs(output_dir, exist_ok=True)
     assignment_path = os.path.join(output_dir, "assignments.jsonl")
     index_dir = os.path.join(os.path.dirname(output_dir), "indexes", "domains")
     handles, index_paths = prepare_index_handles(index_dir, registry["domains"])
 
     primary_counts = Counter()
+    primary_candidate_counts = Counter()
     membership_counts = Counter()
     cross_domain_count = 0
+    ambiguous_primary_count = 0
     total = 0
 
     try:
         with open(assignment_path, "w", encoding="utf-8") as out:
             for example in iter_jsonl(training_path):
-                assignment = classify_training_example(example, research_assignments, registry)
+                assignment = classify_training_example(
+                    example, research_assignments, registry, classifier_version
+                )
                 out.write(json.dumps(assignment, ensure_ascii=False, sort_keys=True) + "\n")
                 total += 1
-                primary_counts[assignment["primary_domain_id"]] += 1
+                primary_key = assignment["primary_domain_id"] or "AMBIGUOUS"
+                primary_counts[primary_key] += 1
+                ambiguous_primary_count += int(assignment["primary_domain_id"] is None)
+                for domain_id in assignment["primary_domain_candidates"]:
+                    primary_candidate_counts[domain_id] += 1
                 for domain_id in assignment["domain_ids"]:
                     membership_counts[domain_id] += 1
                 cross_domain_count += int(assignment["cross_domain"])
@@ -318,8 +370,10 @@ def build_training(training_path: str, output_dir: str, research_assignments: di
     return assignment_path, index_paths, {
         "total_assignments": total,
         "primary_counts": dict(sorted(primary_counts.items())),
+        "primary_candidate_counts": dict(sorted(primary_candidate_counts.items())),
         "membership_counts": dict(sorted(membership_counts.items())),
         "cross_domain_count": cross_domain_count,
+        "ambiguous_primary_count": ambiguous_primary_count,
     }
 
 
@@ -335,24 +389,34 @@ def main(argv=None) -> int:
     ap.add_argument("--rules", default="config/domain_rules.json")
     ap.add_argument("--research-domain-dir", default="data/research_db/domains")
     ap.add_argument("--training-domain-dir", default="data/training_db/domains")
+    ap.add_argument("--manifest", default="data/domain_manifest.json")
     args = ap.parse_args(argv)
 
     registry = load_json(args.registry)
     rules = load_json(args.rules)
+    rules_digest = sha256_file(args.rules)
+    classifier_version = classifier_identity(rules, rules_digest)
     compiled_rules = compile_rules(rules)
 
     research_assignments, research_assignment_path, research_index_paths, research_stats = build_research(
-        args.research, args.research_domain_dir, registry, rules, compiled_rules
+        args.research, args.research_domain_dir, registry, rules, compiled_rules,
+        classifier_version,
     )
     training_assignment_path, training_index_paths, training_stats = build_training(
-        args.training, args.training_domain_dir, research_assignments, registry
+        args.training, args.training_domain_dir, research_assignments, registry,
+        classifier_version,
     )
 
     manifest = {
         "domain_schema_version": DOMAIN_SCHEMA_VERSION,
         "registry_version": registry["registry_version"],
         "rules_version": rules["rules_version"],
-        "classifier_version": CLASSIFIER_VERSION,
+        "classifier_version": classifier_version,
+        "classifier": {
+            "identity": classifier_version,
+            "rules_version": rules["rules_version"],
+            "rules_sha256": rules_digest,
+        },
         "generated_at": now_iso(),
         "governance": {
             "assignment_status": "candidate",
@@ -379,8 +443,10 @@ def main(argv=None) -> int:
         },
     }
 
-    manifest_path = "data/domain_manifest.json"
-    os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+    manifest_path = args.manifest
+    manifest_parent = os.path.dirname(manifest_path)
+    if manifest_parent:
+        os.makedirs(manifest_parent, exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2, sort_keys=True)
         f.write("\n")

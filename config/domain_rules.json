@@ -12,12 +12,20 @@
     "research": {
       "max_cross_domain_rate": 0.60,
       "max_avg_domains_per_record": 2.50,
-      "max_primary_share_any_substantive_domain": 0.70
+      "max_primary_share_any_substantive_domain": 0.70,
+      "max_unclassified_rate": 0.85,
+      "max_ambiguous_primary_rate": 0.25,
+      "min_substantive_primary_domains": 4,
+      "min_substantive_membership_domains": 6
     },
     "training": {
       "max_cross_domain_rate": 0.70,
       "max_avg_domains_per_record": 3.00,
-      "max_primary_share_any_substantive_domain": 0.75
+      "max_primary_share_any_substantive_domain": 0.75,
+      "max_unclassified_rate": 0.90,
+      "max_ambiguous_primary_rate": 0.35,
+      "min_substantive_primary_domains": 3,
+      "min_substantive_membership_domains": 5
     }
   },
   "notes": "These rules generate candidate domain assignments only. They do not establish canonical domain membership or epistemic status. v0.02 removes generic technical vocabulary that caused semantic collapse in the first full-corpus calibration run.",

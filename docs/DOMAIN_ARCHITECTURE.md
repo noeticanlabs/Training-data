@@ -81,16 +81,27 @@ None of those fields implies another.
 
 ## Multi-label assignments
 
-Assignments may have one primary domain and multiple secondary domains.
+Assignments may have one resolved primary domain and multiple secondary domains.
 
 ```text
 primary_domain_id: D03
+primary_domain_candidates: [D03]
 secondary_domain_ids: [D04, D08]
 domain_ids: [D03, D04, D08]
 cross_domain: true
 ```
 
-D00 is exclusive. If D00 is primary, no substantive domain may appear in the same assignment.
+Equal top scores are not resolved by domain-identifier order. They remain explicit candidate ambiguity:
+
+```text
+primary_domain_id: null
+primary_domain_candidates: [D01, D05]
+secondary_domain_ids: [D12]
+domain_ids: [D01, D05, D12]
+cross_domain: true
+```
+
+D00 is exclusive. If D00 is primary, it is the only primary candidate and no substantive domain may appear in the same assignment.
 
 ## Candidate classifier
 
@@ -105,6 +116,10 @@ Evidence sources are deliberately simple:
 Rules produce scores only for candidate organization. They do not establish scientific truth, proof status, or canonical subject identity.
 
 The rule configuration is separated from the registry so vocabulary can change without redefining the domains themselves.
+
+Every assignment records a classifier identity containing the declared rule version and the first 16 hexadecimal characters of the complete rules-file SHA-256 digest. Assignment IDs include that identity. A rule edit therefore produces a new classifier identity and new assignment IDs even when `rules_version` is accidentally left unchanged.
+
+Assignment sidecars exclude volatile build timestamps. Identical canonical inputs, registry bytes, and rule bytes therefore reproduce identical assignment and index bytes. Build time remains receipt metadata in the manifest.
 
 ## Research assignments
 
@@ -161,9 +176,11 @@ It records:
 
 - input SHA-256 digests;
 - registry/rules digests;
+- rule version and digest-bound classifier identity;
 - assignment digests;
 - every domain-index digest;
 - primary-domain counts;
+- primary-candidate and ambiguous-primary counts;
 - total membership counts;
 - cross-domain counts;
 - explicit governance declarations that canonical content was not mutated and automatic assignment is not canonical.
@@ -175,22 +192,49 @@ The manifest is generated locally and gitignored.
 After building, run:
 
 ```powershell
-python validate_domain_indexes.py
+python validate_domain_indexes.py --report data/domain_structural_report.json
 ```
 
 Validation is exhaustive and checks:
 
 1. Draft 2020-12 schema conformance for every domain assignment;
-2. assignment-ID and subject-ID uniqueness;
+2. assignment-ID and subject-ID uniqueness, including binding to the current rule identity;
 3. exact closure over every research record and every training candidate;
 4. source-hash agreement with the dual databases;
 5. domain IDs against the committed registry;
 6. D00 exclusivity;
-7. primary/secondary/cross-domain consistency;
+7. resolved, ambiguous, secondary, and cross-domain consistency;
 8. automatic `review_status == candidate`;
-9. training inherited-evidence closure to source research records;
+9. complete recomputation of every inherited training projection, including D00;
 10. exact domain-index membership with no missing or extra IDs;
 11. manifest SHA-256 and count reconciliation.
+
+The structural validator is followed by the provisional anti-degeneracy calibration gate:
+
+```powershell
+python validate_domain_calibration.py --report data/domain_calibration_report.json
+```
+
+It rejects excessive multilabel saturation, excessive average memberships, dominant-domain collapse, excessive D00 assignments, excessive unresolved primary ties, and insufficient substantive-domain coverage. A calibration pass is necessary but does not establish canonical semantic correctness.
+
+Deterministic fixture regressions run with:
+
+```powershell
+python -m pip install -r requirements.lock
+python -m unittest -v test_domain_registry.py
+```
+
+The fixture suite includes explicit failures for all-D00 collapse, universal multilabel saturation, broken training inheritance, stale rule identity, and identifier-order tie bias. The same suite runs in CI without requiring the private corpus.
+
+After both full-corpus validators pass, generate a commit-ready receipt with the exact repository commit used for the run:
+
+```powershell
+python build_domain_validation_receipt.py `
+  --repository-revision <40-character-commit-sha> `
+  --output evidence/domain_validation_receipt.json
+```
+
+The receipt contains hashes, versions, aggregate statistics, guardrails, runtime metadata, and validator results. It contains no canonical corpus content.
 
 ## Review and promotion
 
@@ -242,14 +286,20 @@ Cross-domain examples remain multi-labelled rather than copied into independent 
 - lightweight per-domain indexes;
 - domain manifest;
 - exhaustive validator.
+- anti-degeneracy calibration gate;
+- digest-bound classifier and assignment identity;
+- explicit unresolved-primary representation;
+- deterministic regression fixtures and CI.
 
 ### Open
 
 - run the builder over the complete local 70,953-record / 34,747-candidate databases;
 - inspect domain distribution and D00 rate;
+- inspect ambiguous-primary rate and substantive-domain coverage;
 - review false-positive / false-negative samples by domain;
 - tune candidate rules only if observed failures justify it;
 - define human review/promotion workflow;
+- commit a non-sensitive full-corpus validation receipt containing hashes, versions, counts, distributions, commands, and pass/fail status;
 - integrate reviewed domains into Knowledge/Claim/Dependency Graph v0.03;
 - generate admitted Domain x Task training views after training admission begins.
 

@@ -9,8 +9,11 @@
     "registry_version",
     "subject_type",
     "subject_id",
+    "primary_domain_id",
+    "primary_domain_candidates",
     "domain_ids",
     "secondary_domain_ids",
+    "cross_domain",
     "assignment_method",
     "review_status",
     "classifier_version",
@@ -18,7 +21,7 @@
     "scores"
   ],
   "properties": {
-    "schema_version": {"const": "0.01"},
+    "schema_version": {"const": "0.02"},
     "assignment_id": {"type": "string", "minLength": 1},
     "registry_version": {"const": "0.01"},
     "subject_type": {
@@ -29,6 +32,12 @@
     "primary_domain_id": {
       "type": ["string", "null"],
       "pattern": "^D(0[0-9]|1[0-4])$"
+    },
+    "primary_domain_candidates": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^D(0[0-9]|1[0-4])$"},
+      "minItems": 1,
+      "uniqueItems": true
     },
     "domain_ids": {
       "type": "array",
