@@ -1,26 +1,40 @@
 {
-  "rules_version": "0.01",
+  "rules_version": "0.02",
   "status": "candidate_classifier",
   "weights": {
     "legacy_tag": 2.0,
     "title_keyword": 2.0,
     "content_keyword": 1.0
   },
-  "notes": "These rules generate candidate domain assignments only. They do not establish canonical domain membership or epistemic status.",
+  "distribution_guardrails": {
+    "status": "provisional_anti_degeneracy_checks",
+    "purpose": "Detect classifier collapse or near-universal multi-labeling. These thresholds are calibration guards, not assertions about the true corpus domain distribution.",
+    "research": {
+      "max_cross_domain_rate": 0.60,
+      "max_avg_domains_per_record": 2.50,
+      "max_primary_share_any_substantive_domain": 0.70
+    },
+    "training": {
+      "max_cross_domain_rate": 0.70,
+      "max_avg_domains_per_record": 3.00,
+      "max_primary_share_any_substantive_domain": 0.75
+    }
+  },
+  "notes": "These rules generate candidate domain assignments only. They do not establish canonical domain membership or epistemic status. v0.02 removes generic technical vocabulary that caused semantic collapse in the first full-corpus calibration run.",
   "keywords": {
-    "D01": ["mathematics", "mathematical", "theorem", "lemma", "proof", "pde", "ode", "navier-stokes", "navier stokes", "probability", "topology", "geometry", "algebra", "optimization", "numerical analysis"],
-    "D02": ["physics", "physical", "quantum", "relativity", "electromagnetism", "thermodynamics", "mechanics", "fluid dynamics", "energy", "field theory"],
-    "D03": ["dynamical system", "dynamics", "stability", "control theory", "adaptive control", "state space", "attractor", "bifurcation", "timescale separation", "trajectory"],
-    "D04": ["network science", "complex system", "graph dynamics", "adaptive network", "coupled system", "distributed system", "emergent behavior", "laplacian", "incidence matrix", "node", "edge"],
-    "D05": ["formal verification", "theorem prover", "theorem proving", "proof search", "proof engineering", "lean", "mathlib", "type system", "formal semantics", "machine checked", "verification receipt"],
-    "D06": ["software", "algorithm", "runtime", "code", "repository", "github", "rust", "python", "test suite", "unit test", "api", "cli", "data structure"],
-    "D07": ["artificial intelligence", "machine learning", "neural network", "language model", "llm", "training", "representation learning", "agent", "reasoning system", "associative memory", "emergent computation", "non-llm"],
-    "D08": ["electrical", "power grid", "circuit", "rlc", "resistor", "capacitor", "inductor", "voltage", "current", "signal propagation", "power system"],
-    "D09": ["fluid", "hydrodynamic", "flow network", "transport system", "continuum", "viscosity", "pressure", "flowgrid", "flow grid"],
-    "D10": ["maintenance", "facility", "facilities", "building system", "inspection", "asset management", "reliability", "infrastructure", "work order", "hvac", "plumbing", "housing authority"],
-    "D11": ["dataset", "database", "data pipeline", "knowledge graph", "knowledge base", "provenance", "data lineage", "training corpus", "schema", "indexing", "retrieval", "jsonl", "parquet"],
-    "D12": ["experiment", "validation", "benchmark", "falsification", "ablation", "simulation", "reproducibility", "comparative test", "hypothesis", "numerical evidence", "empirical evidence"],
-    "D13": ["business", "commercialization", "market", "customer", "product strategy", "go to market", "go-to-market", "partnership", "company", "revenue", "pricing", "intellectual property"],
-    "D14": ["education", "training manual", "curriculum", "instruction", "assessment", "workforce development", "teacher", "student", "technical training", "professional education"]
+    "D01": ["theorem", "lemma", "proof", "partial differential equation", "ordinary differential equation", "pde", "ode", "navier-stokes", "navier stokes", "sobolev", "banach", "hilbert space", "weak solution", "functional analysis", "compactness argument", "probability", "stochastic process", "topology", "category theory", "algebraic", "optimization problem", "numerical analysis"],
+    "D02": ["quantum mechanics", "quantum theory", "general relativity", "special relativity", "electromagnetism", "maxwell equations", "thermodynamics", "statistical mechanics", "classical mechanics", "fluid dynamics", "turbulence", "lagrangian mechanics", "hamiltonian mechanics", "quantum field theory"],
+    "D03": ["dynamical system", "nonlinear dynamics", "lyapunov", "stability analysis", "control theory", "adaptive control", "state-space model", "state space model", "attractor basin", "attractor dynamics", "bifurcation", "timescale separation", "phase portrait"],
+    "D04": ["network science", "complex system", "graph dynamics", "adaptive network", "coupled system", "coupled oscillator", "distributed system", "emergent behavior", "graph laplacian", "laplacian matrix", "incidence matrix", "node degree", "edge weight", "network topology"],
+    "D05": ["formal verification", "theorem prover", "theorem proving", "proof search", "proof engineering", "lean theorem prover", "lean4", "mathlib", "type system", "formal semantics", "machine checked", "machine-checked", "verification receipt"],
+    "D06": ["software architecture", "runtime system", "runtime kernel", "systems programming", "data structure", "test suite", "unit test", "integration test", "command line interface", "cli", "application programming interface", "api endpoint", "rust crate", "cargo test", "pytest", "github repository"],
+    "D07": ["artificial intelligence", "machine learning", "neural network", "language model", "large language model", "llm", "transformer model", "representation learning", "reinforcement learning", "agent system", "reasoning system", "associative memory", "emergent computation", "non-llm", "non llm"],
+    "D08": ["electrical circuit", "power grid", "power system", "rlc circuit", "rlc network", "resistor", "capacitor", "inductor", "voltage", "electric current", "signal propagation", "electrical network", "circuit theory"],
+    "D09": ["fluid mechanics", "hydrodynamic", "hydrodynamics", "flow network", "transport system", "continuum mechanics", "viscosity", "reynolds number", "pressure field", "flowgrid", "flow grid"],
+    "D10": ["facility maintenance", "facilities maintenance", "building system", "building maintenance", "work order", "asset management", "preventive maintenance", "housing authority", "hvac", "plumbing", "nspire", "reac inspection", "property maintenance"],
+    "D11": ["dataset", "database", "data pipeline", "knowledge graph", "knowledge base", "provenance", "data lineage", "training corpus", "training dataset", "jsonl", "parquet", "vector database", "schema registry", "data index"],
+    "D12": ["experimental design", "benchmark suite", "benchmarking protocol", "falsification test", "ablation study", "reproducibility", "comparative experiment", "comparative test", "numerical validation", "numerical evidence", "empirical evidence", "calibration run", "holdout evaluation", "validation protocol"],
+    "D13": ["commercialization", "customer discovery", "product strategy", "go to market", "go-to-market", "business model", "revenue model", "pricing strategy", "market analysis", "strategic partnership", "intellectual property", "company strategy"],
+    "D14": ["training manual", "curriculum", "lesson plan", "classroom", "teacher", "student assessment", "workforce development", "technical training", "professional education", "instructional design", "vocational training"]
   }
 }
