@@ -251,9 +251,12 @@ class DomainRegistryRegressionTests(unittest.TestCase):
                     "--report", str(structural_report_path),
                 ])
 
+                fixture_rules_version = json.loads(
+                    Path("config/domain_rules.json").read_text(encoding="utf-8")
+                )["rules_version"]
                 calibration_report_path.write_text(json.dumps({
                     "status": "PASS",
-                    "rules_version": "0.02",
+                    "rules_version": fixture_rules_version,
                     "interpretation": "Fixture-only calibration receipt test.",
                     "observed": {},
                     "guardrails": {},
