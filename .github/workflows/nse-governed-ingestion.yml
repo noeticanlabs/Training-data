@@ -1,0 +1,40 @@
+name: NSE Governed Ingestion
+
+on:
+  pull_request:
+    paths:
+      - "ingest_nse_formula_dataset_v001.py"
+      - "validate_nse_ingestion_v001.py"
+      - "test_nse_ingestion_v001.py"
+      - "config/nse_ingestion_v001.json"
+      - "schemas/nse_*.schema.json"
+      - "docs/NSE_GOVERNED_INGESTION_V001.md"
+      - ".github/workflows/nse-governed-ingestion.yml"
+  push:
+    branches:
+      - main
+      - agent/nse-governed-ingestion-v001
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validator dependency
+        run: python -m pip install jsonschema
+      - name: Syntax and schema checks
+        run: |
+          python -m py_compile ingest_nse_formula_dataset_v001.py validate_nse_ingestion_v001.py test_nse_ingestion_v001.py
+          python -m json.tool config/nse_ingestion_v001.json >/dev/null
+          python -m json.tool schemas/nse_formula_research_record.schema.json >/dev/null
+          python -m json.tool schemas/nse_formula_correlation.schema.json >/dev/null
+          python -m json.tool schemas/nse_gi_sequence.schema.json >/dev/null
+      - name: Run deterministic unit tests
+        run: python -m unittest -v test_nse_ingestion_v001.py

@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://noeticanlabs.local/schemas/nse_gi_sequence.schema.json",
+  "title":"Navier-Stokes GI Formula Sequence v0.01",
+  "type":"object",
+  "required":["schema_version","sequence_id","source_formula_id","split","input_symbol_tokens","labels","encoder_contract","quality_flags"],
+  "properties": {
+    "schema_version":{"const":"nse_gi_sequence.v0.01"},
+    "sequence_id":{"type":"string","pattern":"^gi:nse:formula:NSF[0-9]{5}$"},
+    "source_formula_id":{"type":"string","pattern":"^research:formula:nse:NSF[0-9]{5}$"},
+    "split":{"enum":["train","validation","test"]},
+    "input_symbol_tokens":{"type":"array","items":{"type":"string"}},
+    "labels":{"type":"object","required":["primary_family","source_status","is_proof_critical"]},
+    "encoder_contract":{"type":"object","required":["input_only","labels_are_not_input","semantic_solver_in_encoder_forbidden"],"properties":{"input_only":{"const":"input_symbol_tokens"},"labels_are_not_input":{"const":true},"semantic_solver_in_encoder_forbidden":{"const":true}},"additionalProperties":false},
+    "quality_flags":{"type":"array","items":{"type":"string"}}
+  },
+  "additionalProperties":false
+}

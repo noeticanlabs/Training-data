@@ -1,0 +1,23 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://noeticanlabs.local/schemas/nse_formula_correlation.schema.json",
+  "title":"Navier-Stokes Formula Correlation Sidecar v0.01",
+  "type":"object",
+  "required":["schema_version","correlation_id","source_edge_id","relation_type","source_formula_id","target_formula_id","heuristic","source_split","target_split","cross_split","canonical_dependency","review_status"],
+  "properties": {
+    "schema_version":{"const":"nse_formula_correlation.v0.01"},
+    "correlation_id":{"type":"string","pattern":"^research:formula-correlation:nse:NSE[0-9]{6}$"},
+    "source_edge_id":{"type":"string","pattern":"^NSE[0-9]{6}$"},
+    "relation_type":{"const":"candidate_formula_correlation"},
+    "source_formula_id":{"type":"string","pattern":"^research:formula:nse:NSF[0-9]{5}$"},
+    "target_formula_id":{"type":"string","pattern":"^research:formula:nse:NSF[0-9]{5}$"},
+    "heuristic":{"type":"object","required":["shared_source_count","shared_families","source_weight","reconstructed_weight","weight_formula_verified"]},
+    "source_split":{"enum":["train","validation","test"]},
+    "target_split":{"enum":["train","validation","test"]},
+    "cross_split":{"type":"boolean"},
+    "canonical_dependency":{"const":false},
+    "review_status":{"const":"unreviewed"},
+    "notes":{"type":"string"}
+  },
+  "additionalProperties":false
+}
