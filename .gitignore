@@ -11,6 +11,9 @@ data/research_db/
 data/research_graph/
 data/training_db/
 
+# Domain/source-specific governed imports (regenerable, local)
+data/imports/
+
 # Logs
 *.log
 __pycache__/

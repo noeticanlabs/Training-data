@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://noeticanlabs.local/schemas/nse_formula_research_record.schema.json",
+  "title": "Navier-Stokes Governed Formula Research Record v0.01",
+  "type": "object",
+  "required": ["schema_version","research_formula_id","object_type","source_record_id","formula","source_classification","source_split","provenance","epistemic_status","review","quality_flags","training_policy"],
+  "properties": {
+    "schema_version": {"const":"nse_formula_research.v0.01"},
+    "research_formula_id": {"type":"string","pattern":"^research:formula:nse:NSF[0-9]{5}$"},
+    "object_type": {"const":"formula"},
+    "source_record_id": {"type":"string","pattern":"^NSF[0-9]{5}$"},
+    "formula": {
+      "type":"object","required":["raw","normalized","sha256","symbol_tokens","token_count","char_count","features"],
+      "properties": {
+        "raw":{"type":"string"},"normalized":{"type":"string"},"sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+        "symbol_tokens":{"type":"array","items":{"type":"string"}},"token_count":{"type":"integer","minimum":0},"char_count":{"type":"integer","minimum":0},
+        "features":{"type":"object"}
+      },"additionalProperties":false
+    },
+    "source_classification": {
+      "type":"object","required":["families","primary_family","status","is_proof_critical","basis"],
+      "properties":{"families":{"type":"array","items":{"type":"string"}},"primary_family":{"type":"string"},"status":{"type":"string"},"is_proof_critical":{"type":"boolean"},"basis":{"const":"source_dataset_annotation"}},
+      "additionalProperties":false
+    },
+    "source_split":{"enum":["train","validation","test"]},
+    "provenance":{"type":"object","required":["source_archive_sha256","source_dataset_schema","sources"]},
+    "domain_hints":{"type":"array"},
+    "epistemic_status":{"const":"unknown"},
+    "review":{"type":"object","required":["status"],"properties":{"status":{"const":"unreviewed"}},"additionalProperties":true},
+    "quality_flags":{"type":"array","uniqueItems":true,"items":{"enum":["dangling_relation","empty_formula"]}},
+    "training_policy":{"type":"object","required":["default_admission","clean_generation_target","source_status_is_epistemic_status"],"properties":{"default_admission":{"const":"pending_review"},"clean_generation_target":{"type":"boolean"},"source_status_is_epistemic_status":{"const":false}},"additionalProperties":false}
+  },
+  "additionalProperties":false
+}

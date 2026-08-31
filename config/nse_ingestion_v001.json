@@ -1,0 +1,41 @@
+{
+  "pipeline_version": "NSE-GOVERNED-INGESTION-V001",
+  "status": "defined_recipe",
+  "source_dataset_schema": "navier_stokes.machine_readable_formula_dataset.v1",
+  "governance": {
+    "source_status_is_epistemic_status": false,
+    "formula_correlation_is_dependency": false,
+    "automatic_training_admission": false,
+    "cross_split_edges_allowed_in_gi_views": false
+  },
+  "domain_hints": ["mathematics", "fluid_transport_systems"],
+  "training": {
+    "single_formula_task_subtypes": [
+      "formula_primary_family_classification",
+      "source_formula_status_classification",
+      "source_proof_critical_detection",
+      "formula_symbol_completion"
+    ],
+    "relation_task_subtype": "heuristic_formula_correlation_prediction",
+    "relation_positive_threshold": 1.5,
+    "negative_sampling": "same-split pairs absent from the complete source correlation graph",
+    "completion_prefix_fraction": 0.6,
+    "completion_excludes_quality_flags": true
+  },
+  "gi": {
+    "sequence_input": "symbol_tokens",
+    "labels_are_not_encoder_input": true,
+    "semantic_solver_in_encoder_forbidden": true,
+    "graph_views": {
+      "full_same_split": "all same-split source heuristic edges",
+      "shared_source": "same-split edges with shared_source_count > 0",
+      "weight_ge_1_5": "same-split edges with source weight >= 1.5",
+      "weight_ge_2_0": "same-split edges with source weight >= 2.0"
+    }
+  },
+  "evaluation": {
+    "preserve_source_split": true,
+    "provenance_components_are_auxiliary_holdouts": true,
+    "smallest_source_disjoint_component_is_not_assumed_representative": true
+  }
+}

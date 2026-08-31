@@ -1,0 +1,87 @@
+{
+  "config": {
+    "completion_prefix_fraction": 0.6,
+    "domain_hints": [
+      "mathematics",
+      "fluid_transport_systems"
+    ],
+    "path": "config/nse_ingestion_v001.json",
+    "relation_positive_threshold": 1.5,
+    "sha256": "05068cabdfcf07b5d21df8030f7548a313a8a7e0ded0ed64a070af19dfe68454"
+  },
+  "deterministic_rebuild": true,
+  "observed": {
+    "correlation_edges": 18717,
+    "cross_split_edge_count": 7021,
+    "cross_split_edge_rate": 0.3751135331516803,
+    "formula_records": 263,
+    "provenance_component_sizes": [
+      250,
+      13
+    ],
+    "source_sha256_count": 15,
+    "source_sha256_crossing_splits": 12,
+    "syntactic_quality_flag_count": 10
+  },
+  "pipeline_version": "NSE-GOVERNED-INGESTION-V001",
+  "receipt_version": "NSE-GOVERNED-INGESTION-RECEIPT-V001",
+  "scientific_boundary": "PASS establishes deterministic structural ingestion and declared invariants only. It does not establish mathematical truth, model learning, or GI understanding.",
+  "selected_output_hashes": {
+    "gi_formula_sequences": {
+      "count": 263,
+      "sha256": "fb31ec12b83ccd616e2a1c7d5a2434cbc1fcd6be5196bec2f2a503a980c880d4"
+    },
+    "gi_weight_ge_1_5_train": {
+      "count": 2166,
+      "sha256": "494aa9e623e490f4b2a690eee0841331cbe3b92f679610931186ddb02a7021c5"
+    },
+    "provenance_components": {
+      "count": 2,
+      "sha256": "41c19672ee2fe0a96b13ec7d9d9046d089bbcd1902fa1c1426ed7480fa8d54bf"
+    },
+    "research_correlations": {
+      "count": 18717,
+      "sha256": "25aec71cf8f0783c2a879b7a299b1bd3a3ebc8ddd721a8c249d8c337f7fd6e17"
+    },
+    "research_formulas": {
+      "count": 263,
+      "sha256": "9e078313ddce83e5ce6a7027fa8e17c328bad8ecb45fd40f12589a44d15c77ba"
+    },
+    "training_candidates": {
+      "count": 5515,
+      "sha256": "55d8df41dcac3f5f53d81031f98c0a552f9601b834e6bd4ac0f4ec48a2cf3c69"
+    }
+  },
+  "source_archive": {
+    "filename": "Navier_Stokes_Machine_Readable_MultiZip_DAT_JSONL_Dataset_2026-08-31.zip",
+    "internal_checksums": {
+      "checked_count": 24,
+      "mismatches": [],
+      "status": "PASS"
+    },
+    "sha256": "b1c8042da505b0e237c5bfcc1003d5486cc1b343240a10e09102062046d7f13c"
+  },
+  "status": "PASS",
+  "validation": {
+    "error_count": 0,
+    "errors": [],
+    "observed": {
+      "candidate_subtypes": {
+        "formula_primary_family_classification": 263,
+        "formula_symbol_completion": 222,
+        "heuristic_formula_correlation_prediction": 4504,
+        "source_formula_status_classification": 263,
+        "source_proof_critical_detection": 263
+      },
+      "correlations": 18717,
+      "formula_records": 263,
+      "provenance_component_sizes": [
+        250,
+        13
+      ],
+      "quality_flagged_formulas": 10,
+      "training_candidates": 5515
+    },
+    "status": "PASS"
+  }
+}
