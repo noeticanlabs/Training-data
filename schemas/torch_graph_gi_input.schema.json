@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "node_id": {"type": "string"},
+    "node_type": {"type": "string"},
+    "raw_utf8_bytes": {"items": {"maximum": 255, "minimum": 0, "type": "integer"}, "type": "array"},
+    "raw_utf8_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "schema_version": {"const": "TORCH-GRAPH-GI-INPUT-V001"},
+    "target_fields_excluded": {"items": {"type": "string"}, "type": "array", "uniqueItems": true}
+  },
+  "required": ["schema_version", "node_id", "node_type", "raw_utf8_bytes", "raw_utf8_sha256", "target_fields_excluded"],
+  "title": "Torch Graph GI Input v0.01",
+  "type": "object"
+}

@@ -1,0 +1,60 @@
+{
+  "receipt_version": "TORCH-GRAPH-GOVERNED-INGESTION-RECEIPT-V001",
+  "pipeline_version": "TORCH-GRAPH-GOVERNED-INGESTION-V001",
+  "status": "PASS",
+  "deterministic_rebuild": true,
+  "source_archive": {
+    "filename": "Torch_Executable_Complete_Mathematical_Graph_v004_MultiZip_2026-08-31.zip",
+    "sha256": "8ea91596a8c1bb1c9337c0372875032bc71a44018f893e3175134eb96d62b45f",
+    "internal_checksums": {"checked_count": 27, "mismatches": [], "status": "PASS"},
+    "component_zip_replication": {"checked_file_copies": 27, "mismatches": [], "status": "PASS"}
+  },
+  "security": {
+    "source_dataset_loader_uses_weights_only_false": true,
+    "governed_ingestion_uses_weights_only_true": true
+  },
+  "nse_identity_check": {"checked_count": 263, "mismatches": [], "status": "PASS"},
+  "observed": {
+    "graph_nodes": 5999,
+    "graph_edges_raw": 47150,
+    "graph_edges_unique_typed": 47103,
+    "duplicate_typed_edge_extras": 47,
+    "unique_endpoint_pairs": 46962,
+    "graph_component_count": 94,
+    "largest_component_size": 5810,
+    "isolated_node_count": 17,
+    "formula_like_nodes": 4337,
+    "mapped_nodes": 3170,
+    "reported_executable_coverage": 0.7309199907770348,
+    "operator_count": 81,
+    "generic_operator_count": 8,
+    "generic_only_mapped_nodes": 664,
+    "substantive_mapped_nodes": 2506,
+    "substantive_operator_coverage": 0.5778187687341481,
+    "symbolic_context_required": 1167,
+    "exact_or_near_exact_operator_match": 263,
+    "family_template_executable": 2907,
+    "content_blob_like_count": 353,
+    "content_blob_like_exact_count": 31,
+    "risky_source_status_count": 506,
+    "risky_source_status_exact_count": 9,
+    "training_candidate_count": 11844,
+    "gi_input_count": 4337
+  },
+  "selected_output_hashes": {
+    "research/operator_catalog.jsonl": "258e22cd47a3dc35f3a984ab0aeeb46533ad3ae3073dea3f33559e9d769079b4",
+    "research/node_execution_mappings.jsonl": "87d467cc1e0d04482d19755cd21d18da0db5e05b785c5fcc904d32b38bf647d9",
+    "graph/typed_edges_deduplicated.jsonl": "8e4915f0ce12cb0f16acc4ec802d842614ec8304b1c181223ddf13474ea69627",
+    "graph/tensor_metadata.json": "7cfcda7719a28227605b19097a2c00779c5d82296745be14b396fedaa78add90",
+    "training/candidates.jsonl": "6db91d41fafd20b20a19cca3e228d562af75b1b16f2dd037e395d143aebb43df",
+    "gi/node_inputs.jsonl": "b936cd693a534f35d779fce5bdc0a27031d6fbc2ad81462f53450e5ec2fc3990",
+    "gi/node_targets.jsonl": "921861f9f6cc489ee4a611cbd2f2f3b9b0a9753d0a40e07314e4d234633b7829"
+  },
+  "validation": {
+    "status": "PASS",
+    "error_count": 0,
+    "errors": [],
+    "unit_fixtures": "3/3 PASS"
+  },
+  "scientific_boundary": "PASS establishes archive integrity, safe tensor deserialization, referential consistency, exact NSE identity closure, deterministic sidecar construction, and GI target separation. It does not establish mathematical equivalence of operator mappings, proof validity, physical validation, correctness of every graph relation, or model/GI learning."
+}

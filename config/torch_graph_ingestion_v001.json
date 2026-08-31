@@ -1,0 +1,27 @@
+{
+  "canonical_graph_relation": false,
+  "canonical_operator_equivalence": false,
+  "config_version": "TORCH-GRAPH-GOVERNED-INGESTION-CONFIG-V001",
+  "coverage_policy": {
+    "do_not_equate_generic_only_mapping_with_substantive_executability": true,
+    "report_any_callable_coverage": true,
+    "report_substantive_operator_coverage": true
+  },
+  "default_split": "unassigned",
+  "default_training_admission": "pending_review",
+  "generic_operator_domain": "generic",
+  "gi_encoder_policy": "raw UTF-8 bytes may be emitted; semantic solving or target injection in the encoder is forbidden",
+  "safe_tensor_load": {
+    "map_location": "cpu",
+    "weights_only": true
+  },
+  "scientific_boundary": "Executable primitive != proof; family-template mapping != formula equivalence; tensor serialization != validated mathematical model.",
+  "source_schema": "torch_math_graph.v004",
+  "target_leakage_fields": [
+    "execution_level",
+    "operator_ids",
+    "executable_mask",
+    "exact_operator_mask",
+    "operator_multihot"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "canonical_relation": {"const": false},
+    "edge_id": {"type": "string"},
+    "formula_correlation_weight_preserved": {"type": ["boolean", "null"]},
+    "multiplicity": {"minimum": 1, "type": "integer"},
+    "schema_version": {"const": "TORCH-GRAPH-EDGE-SIDECAR-V001"},
+    "source_node_id": {"type": "string"},
+    "source_relation_type": {"type": "string"},
+    "target_node_id": {"type": "string"}
+  },
+  "required": ["schema_version", "edge_id", "source_node_id", "target_node_id", "source_relation_type", "multiplicity", "canonical_relation"],
+  "title": "Torch Graph Edge Sidecar v0.01",
+  "type": "object"
+}
