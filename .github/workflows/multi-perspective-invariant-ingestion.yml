@@ -1,0 +1,34 @@
+name: Multi-Perspective Invariant Governed Ingestion
+
+on:
+  pull_request:
+    paths:
+      - "ingest_multi_perspective_invariant_v001.py"
+      - "validate_multi_perspective_invariant_v001.py"
+      - "verify_multi_perspective_tensor_v001.py"
+      - "test_multi_perspective_invariant_v001.py"
+      - "config/multi_perspective_invariant_v001.json"
+      - "schemas/multi_perspective_*.json"
+      - ".github/workflows/multi-perspective-invariant-ingestion.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax
+        run: python -m py_compile ingest_multi_perspective_invariant_v001.py validate_multi_perspective_invariant_v001.py verify_multi_perspective_tensor_v001.py test_multi_perspective_invariant_v001.py
+      - name: JSON
+        run: |
+          python -m json.tool config/multi_perspective_invariant_v001.json >/dev/null
+          python -m json.tool schemas/multi_perspective_invariant_assignment.schema.json >/dev/null
+          python -m json.tool schemas/multi_perspective_invariant_support.schema.json >/dev/null
+          python -m json.tool schemas/multi_perspective_gi_input.schema.json >/dev/null
+      - name: Regression tests
+        run: python -m unittest -v test_multi_perspective_invariant_v001.py

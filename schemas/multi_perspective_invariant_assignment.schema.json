@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "assignment_semantics": {"const": "relevance_or_requirement"},
+    "canonical_satisfaction_claim": {"const": false},
+    "invariant_ids": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+    "node_id": {"minLength": 1, "type": "string"},
+    "perspectives": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+    "quality_flags": {"items": {"type": "string"}, "type": "array"},
+    "review_status": {"const": "candidate"}
+  },
+  "required": ["node_id", "perspectives", "invariant_ids", "assignment_semantics", "canonical_satisfaction_claim", "review_status"],
+  "title": "Governed Multi-Perspective Invariant Assignment",
+  "type": "object"
+}

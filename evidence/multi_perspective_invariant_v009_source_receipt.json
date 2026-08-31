@@ -1,0 +1,67 @@
+{
+  "continuity": {
+    "new_v009_base_node_type_counts": {
+      "core_invariant": 19,
+      "invariant_validator": 27,
+      "source_backed_binding_receipt": 615,
+      "source_backed_validator_receipt": 126,
+      "source_specific_validator": 1
+    },
+    "new_v009_base_nodes": 788,
+    "torch_v004_node_ids_checked": 5999,
+    "torch_v004_node_ids_present": 5999
+  },
+  "deterministic_rebuild": true,
+  "observed": {
+    "augmented_edges": 102739,
+    "augmented_nodes": 6861,
+    "base_nodes": 6787,
+    "facet_invariants": 66,
+    "gi_inputs": 6787,
+    "nodes_with_2_or_more_perspectives": 6289,
+    "nodes_with_4_or_more_perspectives": 2401,
+    "nodes_with_all_8_perspectives": 26,
+    "perspectives": 8,
+    "quality_flagged_input_labels": 16,
+    "relevance_edges": 34644,
+    "support_entries": 1600,
+    "support_status_counts": {
+      "PARTIAL_CHECK_PASS": 88,
+      "SCOPED_INVARIANT_PASS": 72,
+      "SOURCE_DECLARED": 1440
+    },
+    "training_candidates": 13574,
+    "unique_bundle_signatures": 1814
+  },
+  "pipeline_version": "MULTI-PERSPECTIVE-INVARIANT-GOVERNED-INGESTION-V001",
+  "receipt_version": "MULTI-PERSPECTIVE-INVARIANT-GOVERNED-INGESTION-RECEIPT-V001",
+  "scientific_boundary": "PASS establishes archive integrity, exact tensor/JSON representation consistency, stable node continuity with Torch v0.04, deterministic governed sidecar generation, and separation of relevance from scoped support. It does not establish invariant satisfaction, proof validity, physical validity, empirical validation, correctness of every heuristic mapping, CohBit learning, or GI understanding.",
+  "selected_output_hashes": {
+    "gi/node_inputs.jsonl": {"count": 6787, "sha256": "868eec52d18ce5eff92c2c8c3ca9c4e24a5a75b18c798664f8ed8455c1174045"},
+    "gi/node_targets.jsonl": {"count": 6787, "sha256": "327b0328ef36e6cfc6c8dacaf639286a3370fcaf4a5850a2245e1b4746f40b66"},
+    "graph/relevance_edges.jsonl": {"count": 34644, "sha256": "698c29cea1b02ab0dfcd8dc6a4c0fe81be65a1efda9b82cb79e53ee6ca3b4a97"},
+    "research/facet_invariants.jsonl": {"count": 66, "sha256": "3d908e15cf411ae3d6e35e00856af86fca3472b137731cdbc2801ed458699430"},
+    "research/invariant_support.jsonl": {"count": 1600, "sha256": "3443c3b73d1ca019185ed23492e2f9418db7af0b1dc57510e3e063379b8fc908"},
+    "research/node_invariant_assignments.jsonl": {"count": 6787, "sha256": "156799ac66ba4fabdad81e3a295a4e6b1f6baeee526e8185a947bd75c9b2679d"},
+    "research/perspectives.jsonl": {"count": 8, "sha256": "3331e629694a06ae5baac9fca1e48866ed05dabfa79497cf5b364891b56ba446"},
+    "training/candidates.jsonl": {"count": 13574, "sha256": "461b601beba5125bcbcb897985d39364b7159a41a68142dd248c55e09ec306c2"}
+  },
+  "source_archive": {
+    "component_zip_replication": {"checked_file_copies": 23, "mismatches": [], "status": "PASS"},
+    "filename": "Multi_Perspective_Invariant_Complete_Mathematical_Graph_v009_MultiZip_2026-08-31.zip",
+    "internal_checksums": {"checked_count": 22, "mismatches": [], "status": "PASS"},
+    "sha256": "d5421ec16b94250c0c2a90dfb15342cc98c285782ad0de4c580d26a6ad7e31e3"
+  },
+  "status": "PASS",
+  "tensor_validation": {
+    "facet_cooccurrence_exact": true,
+    "perspective_cooccurrence_exact": true,
+    "perspective_membership_exact": true,
+    "perspective_membership_shape": [6787, 8],
+    "relation_confidence_exact": true,
+    "relation_confidence_shape": [6787, 66],
+    "support_state_exact": true,
+    "support_state_shape": [6787, 66],
+    "weights_only_load": "PASS"
+  }
+}

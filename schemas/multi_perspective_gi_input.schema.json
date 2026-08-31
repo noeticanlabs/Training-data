@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "encoding": {"const": "utf8_bytes"},
+    "input_bytes": {"items": {"maximum": 255, "minimum": 0, "type": "integer"}, "type": "array"},
+    "input_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "node_id": {"type": "string"},
+    "quality_flags": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["node_id", "encoding", "input_bytes", "input_sha256", "quality_flags"],
+  "title": "GI Multi-Perspective Invariant Input",
+  "type": "object"
+}
