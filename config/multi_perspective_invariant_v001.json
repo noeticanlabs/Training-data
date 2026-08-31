@@ -1,0 +1,31 @@
+{
+  "governance": {
+    "assignment_semantics": "relevance_or_requirement",
+    "automatic_satisfaction_claim": false,
+    "automatic_training_admission": false,
+    "benchmark_split_policy": "unassigned_until_leakage_resistant_split_is_designed",
+    "gi_input_fields": [
+      "node label encoded as UTF-8 bytes"
+    ],
+    "gi_support_targets_default": "excluded",
+    "gi_target_fields": [
+      "perspective_ids",
+      "invariant_ids",
+      "relation_confidence"
+    ],
+    "source_declared_is_independent_validation": false,
+    "support_is_separate_from_relevance": true
+  },
+  "pipeline_version": "MULTI-PERSPECTIVE-INVARIANT-GOVERNED-INGESTION-V001",
+  "quality_policy": {
+    "quarantine_flags": [
+      "contains_control_bytes",
+      "label_gt_2000_chars"
+    ]
+  },
+  "source_schema": "multi_perspective_invariant_graph.v009",
+  "training_tasks": [
+    "perspective_membership_prediction",
+    "invariant_relevance_prediction"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "canonical_global_satisfaction_claim": {"const": false},
+    "independent_validation_claim": {"type": ["boolean", "null"]},
+    "support_status": {"enum": ["SOURCE_DECLARED", "PARTIAL_CHECK_PASS", "SCOPED_INVARIANT_PASS", "FAIL"]}
+  },
+  "required": ["node_id", "invariant_id", "support_status", "canonical_global_satisfaction_claim"],
+  "title": "Governed Invariant Support Record",
+  "type": "object"
+}
