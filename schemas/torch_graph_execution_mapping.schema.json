@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "canonical_formula_equivalence": {"const": false},
+    "content_blob_like": {"type": "boolean"},
+    "execution_level": {"enum": ["symbolic_context_required", "exact_or_near_exact_operator_match", "family_template_executable"]},
+    "formula_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "label": {"type": "string"},
+    "node_id": {"minLength": 1, "type": "string"},
+    "node_type": {"minLength": 1, "type": "string"},
+    "only_generic_mapping": {"type": "boolean"},
+    "operator_count": {"minimum": 0, "type": "integer"},
+    "operator_domains": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+    "operator_ids": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+    "schema_version": {"const": "TORCH-GRAPH-EXECUTION-MAPPING-V001"},
+    "source_families": {"items": {"type": "string"}, "type": "array"},
+    "source_status": {"type": ["string", "null"]},
+    "substantive_operator_count": {"minimum": 0, "type": "integer"},
+    "training_admission": {"const": "pending_review"}
+  },
+  "required": ["schema_version", "node_id", "node_type", "label", "formula_sha256", "execution_level", "operator_ids", "only_generic_mapping", "substantive_operator_count", "canonical_formula_equivalence", "training_admission"],
+  "title": "Torch Graph Execution Mapping v0.01",
+  "type": "object"
+}
