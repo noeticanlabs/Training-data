@@ -1,0 +1,28 @@
+{
+  "export_version": "CFLM-NAVIER-STOKES-V001",
+  "source_archive": "Navier_Stokes_Machine_Readable_MultiZip_DAT_JSONL_Dataset_2026-08-31.zip",
+  "source_archive_sha256": "b1c8042da505b0e237c5bfcc1003d5486cc1b343240a10e09102062046d7f13c",
+  "pack_format": "CFLM-TEACHER-DATA-V001",
+  "task": "formula -> primary_family",
+  "input_template": "Formula: <formula>\\nFamily: ",
+  "target": "primary_family",
+  "splits": {
+    "train": {
+      "records": 204,
+      "bytes": 24582,
+      "sha256": "4d0ec2bea1b856fe513f1af5469f0757d12245a1e5fb163693d275420e872fe5"
+    },
+    "validation": {
+      "records": 23,
+      "bytes": 2532,
+      "sha256": "e97b96d4bb26044266759f9797eac0facfe033f976fd095e06600b295a81568b"
+    },
+    "test": {
+      "records": 36,
+      "bytes": 4050,
+      "sha256": "8324b3f9aa978f7959f4363ece7378480d2ba9c87e53382c236e649b78d06b64"
+    }
+  },
+  "records_sha256": "e410da9e33ad8481e4e9f1bc788fe2a3d17f051a684db0d15380731bafeaced6",
+  "scientific_boundary": "This manifest records the deterministic byte-visible handoff used by the Cohfield-LM native replay. It does not by itself establish successful learning or language competence."
+}
