@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/udlm_curriculum_prototype.yml'
+      - 'udlm_source_text/**'
   workflow_dispatch:
 
 permissions:
@@ -26,29 +27,35 @@ jobs:
       - name: Install PyTorch
         run: python -m pip install --upgrade pip torch
 
-      - name: Build governed starter curriculum
+      - name: Build clean UTF-8 curriculum
         shell: bash
         run: |
           set -euo pipefail
           rm -rf udlm_curriculum
-          mkdir -p udlm_curriculum/archive udlm_curriculum/doctrine
-          mapfile -t files < <(find . -maxdepth 1 -type f -name '*.dat' | sort | head -n 12)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo 'No .dat curriculum sources found' >&2
-            exit 1
-          fi
-          i=0
-          for f in "${files[@]}"; do
-            i=$((i+1))
-            cp "$f" "udlm_curriculum/archive/$(printf '%02d' "$i")_$(basename "$f").txt"
-          done
-          cp README.md udlm_curriculum/doctrine/training_data_readme.md
-          find docs -maxdepth 2 -type f \( -name '*.md' -o -name '*.txt' \) -print0 2>/dev/null | sort -z | head -z -n 8 | while IFS= read -r -d '' f; do
-            safe=$(echo "$f" | tr '/ ' '__')
-            cp "$f" "udlm_curriculum/doctrine/${safe}"
-          done
-          echo "Curriculum files: $(find udlm_curriculum -type f | wc -l)"
-          du -sh udlm_curriculum
+          mkdir -p udlm_curriculum/00_language udlm_curriculum/10_doctrine
+
+          # Deliberately exclude root *.dat files. They are binary containers,
+          # not raw UTF-8 language, and caused the previous null-byte attractor.
+          cp udlm_source_text/Fundamentals_of_Language_Reference.md \
+             udlm_curriculum/00_language/00_fundamentals_of_language.md
+          cp README.md udlm_curriculum/10_doctrine/10_training_data_readme.md
+          cp docs/DATA_ARCHITECTURE.md udlm_curriculum/10_doctrine/20_data_architecture.md
+          cp docs/RESEARCH_GRAPH.md udlm_curriculum/10_doctrine/30_research_graph.md
+
+          python - <<'PY'
+          from pathlib import Path
+          total = 0
+          for p in sorted(Path('udlm_curriculum').rglob('*')):
+              if not p.is_file():
+                  continue
+              raw = p.read_bytes()
+              raw.decode('utf-8')
+              if b'\x00' in raw:
+                  raise SystemExit(f'NUL byte found in curriculum source: {p}')
+              total += len(raw)
+              print(f'{p}: {len(raw):,} bytes UTF-8 OK')
+          print(f'clean curriculum bytes={total:,}')
+          PY
 
       - name: Train persistent UDLM checkpoint
         shell: bash
@@ -57,13 +64,13 @@ jobs:
           mkdir -p artifacts
           python -m udlm.run_curriculum udlm_curriculum \
             --device cpu \
-            --steps-per-file 20 \
+            --steps-per-file 200 \
             --batch-size 4 \
-            --context 96 \
-            --lr 0.002 \
-            --replay-ratio 0.25 \
+            --context 128 \
+            --lr 0.0015 \
+            --replay-ratio 0.35 \
             --replay-bytes 262144 \
-            --max-replay-regression 0.10 \
+            --max-replay-regression 0.20 \
             --lesson-tolerance 0.02 \
             --checkpoint artifacts/udlm_curriculum_prototype.pt \
             --receipts artifacts/udlm_curriculum_receipts.jsonl \
@@ -81,8 +88,9 @@ jobs:
           model = UDLM(UDLMConfig(**payload['config']))
           model.load_state_dict(payload['state_dict'])
           model.eval()
-          out = model.generate(b'Memory ', max_new_bytes=128, greedy=True)
-          print(out.decode('utf-8', errors='replace'))
+          for prompt in [b'The ', b'Language ', b'Memory ']:
+              out = model.generate(prompt, max_new_bytes=128, greedy=True)
+              print(prompt.decode('utf-8') + out.decode('utf-8', errors='replace'))
           PY
 
       - name: Write build manifest
@@ -102,6 +110,7 @@ jobs:
               'kind': 'udlm-working-prototype-build-v1',
               'engine_ref': 'vendored UDLM-v0.1 runtime in noeticanlabs/Training-data',
               'trainer': 'copilot-style-curriculum-v1',
+              'curriculum_policy': 'clean UTF-8 only; binary .dat excluded',
               'built_at_unix': time.time(),
               'files': files,
           }
