@@ -12,6 +12,10 @@ A deliberately small byte-level recurrent dynamical language model built from:
 - minimal 259-way readout
 
 No attention, GRU/LSTM cell, token embedding table, or specialist F0/F1/F2 modules.
+
+Revision: the carrier and relation recurrences use bounded leaky interpolation
+rather than repeatedly applying tanh to the accumulated state. This preserves
+state-space headroom and keeps new byte excitation consequential.
 """
 from __future__ import annotations
 
@@ -38,6 +42,9 @@ class UDLMConfig:
     hidden: int = 32
     micro_steps: int = 2
     vocab_size: int = VOCAB_SIZE
+    input_gain: float = 3.0
+    x_update_rate: float = 0.35
+    rel_update_rate: float = 0.20
 
 
 @dataclass
@@ -116,15 +123,18 @@ class UDLM(nn.Module):
             h = torch.zeros_like(h)
 
         exc = self.fixed_byte_excitation(token)
-        external = exc.unsqueeze(1) * self.input_pattern.unsqueeze(0)
+        external = c.input_gain * exc.unsqueeze(1) * self.input_pattern.unsqueeze(0)
         theta = self.theta.unsqueeze(0).expand(x.size(0), -1, -1)
         src, dst = self.edge_src, self.edge_dst
+        alpha_x = float(c.x_update_rate)
+        alpha_r = float(c.rel_update_rate)
 
         for _ in range(c.micro_steps):
             x_s, x_d = x[:, src], x[:, dst]
             h_s, h_d = h[:, src], h[:, dst]
             dr = self.rel_update(torch.cat([r, x_s, x_d, h_s, h_d], dim=-1))
-            r = torch.tanh(r + 0.5 * dr)
+            r_candidate = torch.tanh(dr)
+            r = (1.0 - alpha_r) * r + alpha_r * r_candidate
             th_s, th_d = theta[:, src], theta[:, dst]
             msg_e = self.message(torch.cat([x_s, r, th_s, th_d], dim=-1))
             incoming = torch.zeros_like(x)
@@ -133,8 +143,9 @@ class UDLM(nn.Module):
             degree = torch.zeros(c.n_nodes, device=x.device, dtype=x.dtype)
             degree.scatter_add_(0, dst, torch.ones_like(dst, dtype=x.dtype))
             incoming = incoming / degree.clamp_min(1.0).view(1, -1, 1)
-            proposal = self.node_update(torch.cat([x, incoming, external, h, theta], dim=-1))
-            x = torch.tanh(0.5 * x + proposal)
+            proposal_raw = self.node_update(torch.cat([x, incoming, external, h, theta], dim=-1))
+            x_candidate = torch.tanh(proposal_raw)
+            x = (1.0 - alpha_x) * x + alpha_x * x_candidate
             h_prop = self.hist_update(torch.cat([h, x], dim=-1))
             keep = torch.sigmoid(self.hist_gate_logit)
             h = keep * h + (1.0 - keep) * torch.tanh(h_prop)
@@ -162,6 +173,7 @@ class UDLM(nn.Module):
             logits, state = self.step(token, state)
         out = bytearray()
         for _ in range(max_new_bytes):
+            assert logits is not None
             if greedy:
                 nxt = int(logits.argmax(dim=-1).item())
             else:
