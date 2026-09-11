@@ -23,7 +23,9 @@ def shab(b): return hashlib.sha256(b).hexdigest()
 def model_hash(m):
     h=hashlib.sha256()
     for n,v in sorted(m.state_dict().items()):
-        h.update(n.encode()); h.update(v.detach().cpu().contiguous().numpy().tobytes())
+        h.update(n.encode())
+        raw=v.detach().cpu().contiguous().view(torch.uint8)
+        h.update(bytes(raw.tolist()))
     return h.hexdigest()
 
 def files(root):
