@@ -18,14 +18,6 @@ jobs:
       - name: Checkout training archive
         uses: actions/checkout@v4
 
-      - name: Checkout UDLM engine
-        uses: actions/checkout@v4
-        with:
-          repository: noeticanlabs/Cohfield-LM
-          ref: UDLM-v0.1
-          path: engine
-          persist-credentials: false
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -59,13 +51,11 @@ jobs:
           du -sh udlm_curriculum
 
       - name: Train persistent UDLM checkpoint
-        env:
-          PYTHONPATH: engine
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts training
-          python -m udlm curriculum-train udlm_curriculum \
+          mkdir -p artifacts
+          python -m udlm.run_curriculum udlm_curriculum \
             --device cpu \
             --steps-per-file 20 \
             --batch-size 4 \
@@ -75,7 +65,6 @@ jobs:
             --replay-bytes 262144 \
             --max-replay-regression 0.10 \
             --lesson-tolerance 0.02 \
-            --checkpoint-every 5 \
             --checkpoint artifacts/udlm_curriculum_prototype.pt \
             --receipts artifacts/udlm_curriculum_receipts.jsonl \
             --prompt 'The system ' \
@@ -83,10 +72,18 @@ jobs:
             2>&1 | tee artifacts/training.log
 
       - name: Smoke-load checkpoint
-        env:
-          PYTHONPATH: engine
+        shell: bash
         run: |
-          python -m udlm generate artifacts/udlm_curriculum_prototype.pt 'Memory ' --device cpu --max-new-bytes 128 | tee artifacts/generation_smoke.txt
+          python - <<'PY' | tee artifacts/generation_smoke.txt
+          import torch
+          from udlm.model import UDLM, UDLMConfig
+          payload = torch.load('artifacts/udlm_curriculum_prototype.pt', map_location='cpu')
+          model = UDLM(UDLMConfig(**payload['config']))
+          model.load_state_dict(payload['state_dict'])
+          model.eval()
+          out = model.generate(b'Memory ', max_new_bytes=128, greedy=True)
+          print(out.decode('utf-8', errors='replace'))
+          PY
 
       - name: Write build manifest
         shell: bash
@@ -103,7 +100,7 @@ jobs:
                   }
           manifest = {
               'kind': 'udlm-working-prototype-build-v1',
-              'engine_ref': 'noeticanlabs/Cohfield-LM@UDLM-v0.1',
+              'engine_ref': 'vendored UDLM-v0.1 runtime in noeticanlabs/Training-data',
               'trainer': 'copilot-style-curriculum-v1',
               'built_at_unix': time.time(),
               'files': files,
