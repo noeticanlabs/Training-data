@@ -25,8 +25,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyTorch
-        run: python -m pip install --upgrade pip torch
+      - name: Install CPU PyTorch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.0
+
+      - name: Compile and preflight certified machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q udlm
+          python -m udlm.preflight
 
       - name: Build clean UTF-8 curriculum
         shell: bash
@@ -41,6 +52,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           total = 0
+          files = []
           for p in sorted(Path('udlm_curriculum').rglob('*')):
               if not p.is_file():
                   continue
@@ -48,9 +60,14 @@ jobs:
               raw.decode('utf-8')
               if b'\x00' in raw:
                   raise SystemExit(f'NUL byte found in curriculum source: {p}')
+              if len(raw) < 64:
+                  raise SystemExit(f'curriculum source too short for disjoint holdout: {p}')
               total += len(raw)
+              files.append(str(p))
               print(f'{p}: {len(raw):,} bytes UTF-8 OK')
-          print(f'clean curriculum bytes={total:,}')
+          if not files:
+              raise SystemExit('no curriculum files built')
+          print(f'clean curriculum files={len(files)} bytes={total:,}')
           PY
 
       - name: Run certified learning loop
@@ -67,12 +84,14 @@ jobs:
             --lr 0.0015 \
             --replay-ratio 0.35 \
             --replay-bytes 262144 \
+            --retention-bytes 262144 \
             --validation-fraction 0.20 \
             --min-acquisition-gain 0.02 \
             --min-validation-gain 0.01 \
             --max-replay-regression 0.10 \
             --hard-replay-regression 0.25 \
             --max-generation-regression 0.12 \
+            --hard-generation-regression 0.20 \
             --rail-limit 0.90 \
             --checkpoint artifacts/udlm_certified.pt \
             --receipts artifacts/udlm_certified_receipts.jsonl \
@@ -92,15 +111,33 @@ jobs:
           test -s artifacts/udlm_certified_report.json
           python - <<'PY'
           import json
+          import torch
           from pathlib import Path
+          from udlm.model import UDLM, UDLMConfig
+          from udlm.run_certified import model_hash, validate_receipt_chain
+
           report = json.loads(Path('artifacts/udlm_certified_report.json').read_text(encoding='utf-8'))
-          print('canonical_model_hash=', report['canonical_model_hash'])
+          payload = torch.load('artifacts/udlm_certified.pt', map_location='cpu')
+          model = UDLM(UDLMConfig(**payload['config']))
+          model.load_state_dict(payload['state_dict'])
+          checkpoint_hash = model_hash(model)
+          ledger_tail = validate_receipt_chain(Path('artifacts/udlm_certified_receipts.jsonl'))
+          if checkpoint_hash != report['canonical_model_hash']:
+              raise SystemExit('canonical checkpoint hash does not match report')
+          if ledger_tail != report['last_receipt']:
+              raise SystemExit('receipt ledger tail does not match report')
+          if payload.get('metadata', {}).get('canonical_model_hash') != checkpoint_hash:
+              raise SystemExit('checkpoint metadata hash does not match checkpoint')
+
+          print('canonical_model_hash=', checkpoint_hash)
+          print('last_receipt=', ledger_tail)
           print('counts=', report['counts'])
+          print('validation_semantics=', report['validation_semantics'])
           for prompt, row in report['generation_panel'].items():
               print(f'{prompt!r}: {row["text"]!r}')
               print('  metrics=', row['metrics'])
-              print('  X=', row['state']['x'])
-              print('  R=', row['state']['r'])
+              for field in ('x', 'r', 'h', 'q'):
+                  print(f'  {field.upper()}=', row['state'][field])
           PY
 
       - name: Write build manifest
@@ -112,13 +149,17 @@ jobs:
           files = {}
           for p in sorted(root.rglob('*')):
               if p.is_file():
-                  files[str(p.relative_to(root))] = {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
+                  files[str(p.relative_to(root))] = {
+                      'bytes': p.stat().st_size,
+                      'sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
+                  }
           manifest = {
-              'kind': 'udlm-certified-learning-build-v1',
+              'kind': 'udlm-certified-learning-build-v2',
               'engine': 'UDLM-v0.1 payload/routing dynamics',
               'trainer': 'candidate -> challenge -> ADMIT/HOLD/REJECT -> diagnose -> receipt',
               'learning_boundary': 'weight update is a candidate; only admitted candidates become canonical',
               'repair_boundary': 'failure classification records continuation requirements; no unverified automatic architecture repair',
+              'validation_semantics': 'disjoint within-source heldout bytes are excluded from replay training and retained separately',
               'curriculum_policy': 'clean UTF-8 only; binary .dat excluded',
               'built_at_unix': time.time(),
               'files': files,
