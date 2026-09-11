@@ -141,11 +141,13 @@ jobs:
           PY
 
       - name: Write build manifest
+        if: always()
         shell: bash
         run: |
           python - <<'PY'
-          import hashlib, json, pathlib, time
+          import hashlib, json, os, pathlib, time
           root = pathlib.Path('artifacts')
+          root.mkdir(parents=True, exist_ok=True)
           files = {}
           for p in sorted(root.rglob('*')):
               if p.is_file():
@@ -161,16 +163,18 @@ jobs:
               'repair_boundary': 'failure classification records continuation requirements; no unverified automatic architecture repair',
               'validation_semantics': 'disjoint within-source heldout bytes are excluded from replay training and retained separately',
               'curriculum_policy': 'clean UTF-8 only; binary .dat excluded',
+              'git_sha': os.environ.get('GITHUB_SHA'),
               'built_at_unix': time.time(),
               'files': files,
           }
           (root / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
           PY
 
-      - name: Upload certified prototype
+      - name: Upload certified prototype or failure diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: udlm-certified-learning-prototype
           path: artifacts/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
