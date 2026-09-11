@@ -58,21 +58,15 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           files = sorted(Path('udlm_curriculum').rglob('*.txt'))
-          if len(files) != 9:
-              raise SystemExit(f'expected exactly 9 C0-C8 stage files, found {len(files)}')
-          total = 0
-          stages = []
+          if len(files) != 9: raise SystemExit(f'expected exactly 9 C0-C8 stage files, found {len(files)}')
+          total = 0; stages = []
           for p in files:
               raw = p.read_bytes(); raw.decode('utf-8')
-              if b'\x00' in raw:
-                  raise SystemExit(f'NUL byte found in curriculum source: {p}')
-              if len(raw) < 512:
-                  raise SystemExit(f'curriculum stage too short for holdout: {p}')
-              total += len(raw); stages.append(p.parent.name)
-              print(f'{p}: {len(raw):,} bytes UTF-8 OK')
+              if b'\x00' in raw: raise SystemExit(f'NUL byte found in curriculum source: {p}')
+              if len(raw) < 512: raise SystemExit(f'curriculum stage too short for holdout: {p}')
+              total += len(raw); stages.append(p.parent.name); print(f'{p}: {len(raw):,} bytes UTF-8 OK')
           for i in range(9):
-              if not any(s.startswith(f'{i:02d}_') for s in stages):
-                  raise SystemExit(f'missing curriculum stage C{i}')
+              if not any(s.startswith(f'{i:02d}_') for s in stages): raise SystemExit(f'missing curriculum stage C{i}')
           print(f'staged curriculum files={len(files)} bytes={total:,}')
           PY
 
@@ -80,28 +74,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf artifacts
-          mkdir -p artifacts
+          rm -rf artifacts && mkdir -p artifacts
           python -m udlm.run_stage_frozen udlm_curriculum \
-            --out artifacts/stage_frozen \
-            --device cpu \
-            --steps-per-stage 200 \
-            --batch-size 4 \
-            --context 128 \
-            --lr 0.0015 \
-            --replay-ratio 0.35 \
-            --replay-bytes 262144 \
-            --retention-bytes 262144 \
-            --validation-fraction 0.20 \
-            --min-acquisition-gain 0.02 \
-            --min-validation-gain 0.01 \
-            --max-replay-regression 0.10 \
-            --hard-replay-regression 0.25 \
-            --max-generation-regression 0.12 \
-            --hard-generation-regression 0.20 \
-            --rail-limit 0.90 \
-            --max-new-bytes 128 \
-            2>&1 | tee artifacts/training.log
+            --out artifacts/stage_frozen --device cpu --steps-per-stage 200 --batch-size 4 \
+            --context 128 --lr 0.0015 --replay-ratio 0.35 --replay-bytes 262144 \
+            --retention-bytes 262144 --validation-fraction 0.20 --min-acquisition-gain 0.02 \
+            --min-validation-gain 0.01 --max-replay-regression 0.10 --hard-replay-regression 0.25 \
+            --max-generation-regression 0.12 --hard-generation-regression 0.20 --rail-limit 0.90 \
+            --max-new-bytes 128 2>&1 | tee artifacts/training.log
 
       - name: Automatically diagnose stopped lineage with RPAIR
         shell: bash
@@ -111,67 +91,54 @@ jobs:
           import hashlib, json
           from pathlib import Path
           from udlm.rpair_diagnose import write_stage_diagnosis
-          root = Path('artifacts/stage_frozen')
-          summary = json.loads((root / 'lineage_summary.json').read_text(encoding='utf-8'))
+          root = Path('artifacts/stage_frozen'); summary = json.loads((root/'lineage_summary.json').read_text())
           if not summary.get('stopped'):
-              print('RPAIR diagnosis: lineage did not stop; no failed stage to diagnose')
-              raise SystemExit(0)
+              print('RPAIR diagnosis: lineage did not stop'); raise SystemExit(0)
           stage = summary['last_stage']
           path = write_stage_diagnosis(root, stage, context=128, validation_fraction=0.20,
               max_retention_regression=0.10, rail_limit=0.90, max_new_bytes=128, device_name='cpu')
-          diagnosis = json.loads(path.read_text(encoding='utf-8'))
-          manifest_path = root / stage / 'manifest.json'
-          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-          raw = path.read_bytes()
-          manifest['files']['rpair_diagnosis.json'] = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
-          manifest['rpair_diagnosis'] = {'primary_fault': diagnosis['primary_fault'],
-              'failure_class': diagnosis['failure_class'], 'diagnostic_confidence': diagnosis['diagnostic_confidence']}
-          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True), encoding='utf-8')
-          print('RPAIR failed_stage=', stage)
-          print('RPAIR primary_fault=', diagnosis['primary_fault'])
-          print('RPAIR confidence=', diagnosis['diagnostic_confidence'])
-          print('RPAIR worst_affected=', diagnosis['worst_affected_certified_stage'])
-          print('RPAIR continuation_requirement=', diagnosis['continuation_requirement'])
+          diagnosis = json.loads(path.read_text()); manifest_path = root/stage/'manifest.json'; manifest=json.loads(manifest_path.read_text())
+          raw=path.read_bytes(); manifest['files']['rpair_diagnosis.json']={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+          manifest['rpair_diagnosis']={'primary_fault':diagnosis['primary_fault'],'failure_class':diagnosis['failure_class'],'diagnostic_confidence':diagnosis['diagnostic_confidence']}
+          manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True))
+          print('RPAIR primary_fault=', diagnosis['primary_fault']); print('RPAIR worst_affected=', diagnosis['worst_affected_certified_stage'])
           PY
 
-      - name: Automatically rehearse bounded RPAIR repair candidates
+      - name: Automatically rehearse bounded RPAIR replay repairs
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           import hashlib, json, subprocess, sys
           from pathlib import Path
-          root = Path('artifacts/stage_frozen')
-          summary = json.loads((root / 'lineage_summary.json').read_text(encoding='utf-8'))
-          if not summary.get('stopped'):
-              print('RPAIR repair: lineage did not stop; nothing to repair')
-              raise SystemExit(0)
-          stage = summary['last_stage']
-          diagnosis = json.loads((root / stage / 'rpair_diagnosis.json').read_text(encoding='utf-8'))
-          if diagnosis.get('primary_fault') != 'CERTIFIED_CAPABILITY_INTERFERENCE':
-              print('RPAIR repair: current bounded repair policy does not cover', diagnosis.get('primary_fault'))
-              raise SystemExit(0)
-          subprocess.run([sys.executable, '-m', 'udlm.rpair_repair', str(root), stage,
-              '--context', '128', '--validation-fraction', '0.20', '--steps', '200', '--batch-size', '4',
-              '--max-retention-regression', '0.10', '--max-generation-regression', '0.12',
-              '--min-acquisition-gain', '0.02', '--min-validation-gain', '0.01',
-              '--rail-limit', '0.90', '--max-new-bytes', '128', '--device', 'cpu'], check=True)
-          repair_path = root / stage / 'rpair_repair_summary.json'
-          repair = json.loads(repair_path.read_text(encoding='utf-8'))
-          manifest_path = root / stage / 'manifest.json'
-          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-          raw = repair_path.read_bytes()
-          manifest['files']['rpair_repair_summary.json'] = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
-          manifest['rpair_repair'] = {'trial_count': repair['trial_count'],
-              'passing_trial_count': repair['passing_trial_count'],
-              'best_trial_name': repair['best_trial']['name'],
-              'best_trial_passes': repair['best_trial']['passes_all_gates']}
-          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True), encoding='utf-8')
-          print('RPAIR repair trials=', repair['trial_count'])
-          print('RPAIR repair passing=', repair['passing_trial_count'])
-          print('RPAIR repair best=', repair['best_trial']['name'])
-          print('RPAIR repair best_passes=', repair['best_trial']['passes_all_gates'])
-          print('RPAIR repair best_worst_retention=', repair['best_trial']['worst_retention'])
+          root=Path('artifacts/stage_frozen'); summary=json.loads((root/'lineage_summary.json').read_text())
+          if not summary.get('stopped'): raise SystemExit(0)
+          stage=summary['last_stage']; diagnosis=json.loads((root/stage/'rpair_diagnosis.json').read_text())
+          if diagnosis.get('primary_fault')!='CERTIFIED_CAPABILITY_INTERFERENCE': raise SystemExit(0)
+          subprocess.run([sys.executable,'-m','udlm.rpair_repair',str(root),stage,'--context','128','--validation-fraction','0.20','--steps','200','--batch-size','4','--max-retention-regression','0.10','--max-generation-regression','0.12','--min-acquisition-gain','0.02','--min-validation-gain','0.01','--rail-limit','0.90','--max-new-bytes','128','--device','cpu'],check=True)
+          p=root/stage/'rpair_repair_summary.json'; repair=json.loads(p.read_text()); mpath=root/stage/'manifest.json'; m=json.loads(mpath.read_text()); raw=p.read_bytes()
+          m['files']['rpair_repair_summary.json']={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}; m['rpair_repair']={'trial_count':repair['trial_count'],'passing_trial_count':repair['passing_trial_count'],'best_trial_name':repair['best_trial']['name'],'best_trial_passes':repair['best_trial']['passes_all_gates']}; mpath.write_text(json.dumps(m,indent=2,sort_keys=True))
+          print('RPAIR replay passing=',repair['passing_trial_count'],'best=',repair['best_trial']['name'])
+          PY
+
+      - name: Automatically rehearse importance-anchored RPAIR plasticity repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, subprocess, sys
+          from pathlib import Path
+          root=Path('artifacts/stage_frozen'); summary=json.loads((root/'lineage_summary.json').read_text())
+          if not summary.get('stopped'): raise SystemExit(0)
+          stage=summary['last_stage']; diagnosis=json.loads((root/stage/'rpair_diagnosis.json').read_text())
+          if diagnosis.get('primary_fault')!='CERTIFIED_CAPABILITY_INTERFERENCE': raise SystemExit(0)
+          replay_path=root/stage/'rpair_repair_summary.json'; replay=json.loads(replay_path.read_text()) if replay_path.exists() else {'passing_trial_count':0}
+          if replay.get('passing_trial_count',0)>0:
+              print('RPAIR plasticity repair skipped: replay already produced a passing candidate'); raise SystemExit(0)
+          subprocess.run([sys.executable,'-m','udlm.rpair_plasticity_repair',str(root),stage,'--context','128','--validation-fraction','0.20','--steps','200','--batch-size','4','--importance-batches','8','--max-retention-regression','0.10','--max-generation-regression','0.12','--min-acquisition-gain','0.02','--min-validation-gain','0.01','--rail-limit','0.90','--max-new-bytes','128','--device','cpu'],check=True)
+          p=root/stage/'rpair_plasticity_repair_summary.json'; repair=json.loads(p.read_text()); mpath=root/stage/'manifest.json'; m=json.loads(mpath.read_text()); raw=p.read_bytes()
+          m['files']['rpair_plasticity_repair_summary.json']={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}; m['rpair_plasticity_repair']={'trial_count':repair['trial_count'],'passing_trial_count':repair['passing_trial_count'],'best_trial_name':repair['best_trial']['name'],'best_trial_passes':repair['best_trial']['passes_all_gates'],'mechanism':repair['mechanism']}; mpath.write_text(json.dumps(m,indent=2,sort_keys=True))
+          print('RPAIR plasticity passing=',repair['passing_trial_count']); print('RPAIR plasticity best=',repair['best_trial']['name']); print('RPAIR plasticity best_retention=',repair['best_trial']['worst_retention'])
           PY
 
       - name: Validate frozen stage artifacts
@@ -182,36 +149,26 @@ jobs:
           test -s artifacts/stage_frozen/lineage_receipts.jsonl
           test -s artifacts/stage_frozen/latest_certified.pt
           python - <<'PY'
-          import hashlib, json
+          import hashlib,json
           from pathlib import Path
           import torch
-          from udlm.model import UDLM, UDLMConfig
-          from udlm.run_certified import model_hash, validate_receipt_chain
-          root = Path('artifacts/stage_frozen')
-          summary = json.loads((root / 'lineage_summary.json').read_text(encoding='utf-8'))
-          tail = validate_receipt_chain(root / 'lineage_receipts.jsonl')
-          if tail != summary['last_receipt_hash']:
-              raise SystemExit('lineage receipt tail mismatch')
-          payload = torch.load(root / 'latest_certified.pt', map_location='cpu')
-          model = UDLM(UDLMConfig(**payload['config'])); model.load_state_dict(payload['state_dict'])
-          if model_hash(model) != summary['final_canonical_model_hash']:
-              raise SystemExit('latest certified checkpoint hash mismatch')
+          from udlm.model import UDLM,UDLMConfig
+          from udlm.run_certified import model_hash,validate_receipt_chain
+          root=Path('artifacts/stage_frozen'); summary=json.loads((root/'lineage_summary.json').read_text()); tail=validate_receipt_chain(root/'lineage_receipts.jsonl')
+          if tail!=summary['last_receipt_hash']: raise SystemExit('lineage receipt tail mismatch')
+          payload=torch.load(root/'latest_certified.pt',map_location='cpu'); model=UDLM(UDLMConfig(**payload['config'])); model.load_state_dict(payload['state_dict'])
+          if model_hash(model)!=summary['final_canonical_model_hash']: raise SystemExit('latest certified checkpoint hash mismatch')
           for row in summary['lineage']:
-              stage = row['stage']; d = root / stage
+              stage=row['stage']; d=root/stage
               for name in ('parent.pt','candidate.pt','canonical.pt','curriculum.txt','report.json','receipt.json','manifest.json'):
-                  if not (d / name).is_file(): raise SystemExit(f'{stage}: missing {name}')
-              if row['decision'] != 'ADMIT' and not (d / 'rpair_diagnosis.json').is_file():
-                  raise SystemExit(f'{stage}: stopped stage missing automatic RPAIR diagnosis')
-              manifest = json.loads((d / 'manifest.json').read_text(encoding='utf-8'))
-              for name, meta in manifest['files'].items():
-                  p = d / name
-                  if hashlib.sha256(p.read_bytes()).hexdigest() != meta['sha256']:
-                      raise SystemExit(f'{stage}: SHA mismatch for {name}')
-              print(stage, row['decision'], row['canonical_model_hash'])
-          print('last_stage=', summary['last_stage'])
-          print('last_decision=', summary['last_decision'])
-          print('final_canonical_model_hash=', summary['final_canonical_model_hash'])
-          print('last_receipt_hash=', summary['last_receipt_hash'])
+                  if not (d/name).is_file(): raise SystemExit(f'{stage}: missing {name}')
+              if row['decision']!='ADMIT' and not (d/'rpair_diagnosis.json').is_file(): raise SystemExit(f'{stage}: stopped stage missing RPAIR diagnosis')
+              manifest=json.loads((d/'manifest.json').read_text())
+              for name,meta in manifest['files'].items():
+                  p=d/name
+                  if hashlib.sha256(p.read_bytes()).hexdigest()!=meta['sha256']: raise SystemExit(f'{stage}: SHA mismatch for {name}')
+              print(stage,row['decision'],row['canonical_model_hash'])
+          print('final_canonical_model_hash=',summary['final_canonical_model_hash'])
           PY
 
       - name: Write build manifest
@@ -219,24 +176,12 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import hashlib, json, os, pathlib, time
-          root = pathlib.Path('artifacts'); root.mkdir(parents=True, exist_ok=True)
-          files = {}
+          import hashlib,json,os,pathlib,time
+          root=pathlib.Path('artifacts'); root.mkdir(parents=True,exist_ok=True); files={}
           for p in sorted(root.rglob('*')):
-              if p.is_file():
-                  files[str(p.relative_to(root))] = {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
-          manifest = {
-              'kind': 'udlm-certified-stage-frozen-build-v3-rpair-repair-rehearsal',
-              'engine': 'UDLM-v0.1 homeostatic payload/routing dynamics',
-              'training_policy': 'C0-C8 developmental curriculum; each executed stage freezes parent, candidate, canonical, receipt, report, curriculum and manifest',
-              'progression_policy': 'next stage executes only after prior ADMIT; HOLD or REJECT stops lineage',
-              'rpair_policy': 'stopped lineage receives automatic diagnosis and bounded non-promoting repair rehearsal from frozen parent',
-              'validation_semantics': 'disjoint within-source heldout bytes excluded from replay training',
-              'git_sha': os.environ.get('GITHUB_SHA'),
-              'built_at_unix': time.time(),
-              'files': files,
-          }
-          (root / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+              if p.is_file(): files[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+          manifest={'kind':'udlm-certified-stage-frozen-build-v4-rpair-plasticity-repair','engine':'UDLM-v0.1 homeostatic payload/routing dynamics','training_policy':'C0-C8 stage-frozen certified curriculum','progression_policy':'next stage only after ADMIT','rpair_policy':'diagnose -> replay repair -> if unresolved, importance-anchored plasticity repair; no automatic promotion','validation_semantics':'heldout bytes are evaluation-only','git_sha':os.environ.get('GITHUB_SHA'),'built_at_unix':time.time(),'files':files}
+          (root/'manifest.json').write_text(json.dumps(manifest,indent=2))
           PY
 
       - name: Upload stage-frozen certified lineage
