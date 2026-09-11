@@ -45,6 +45,11 @@ class UDLMConfig:
     r_decay: float = 0.97
     r_step: float = 0.15
     state_rms_cap: float = 1.25
+    q_rms_target: float = 0.70
+    r_rms_target: float = 0.70
+    q_rms_cap: float = 1.00
+    r_rms_cap: float = 1.00
+    homeostasis_strength: float = 1.0
 
 
 @dataclass
@@ -116,6 +121,16 @@ class UDLM(nn.Module):
         rms = v.square().mean(dim=-1, keepdim=True).add(1e-8).sqrt()
         return v * torch.clamp(cap / rms, max=1.0)
 
+    @staticmethod
+    def _homeostatic_update(state: Tensor, delta: Tensor, *, decay: float, step: float,
+                            target: float, cap: float, strength: float) -> Tensor:
+        """Energy-sensitive residual update for routing and relational fields."""
+        rms = state.square().mean(dim=-1, keepdim=True).add(1e-8).sqrt()
+        pressure = (rms / max(target, 1e-6)).square()
+        susceptibility = 1.0 / (1.0 + strength * pressure)
+        updated = decay * state + step * susceptibility * delta
+        return UDLM._rms_cap(updated, cap)
+
     def initial_state(self, batch_size: int, device: Optional[torch.device] = None) -> UDLMState:
         c = self.cfg
         device = device or self.theta.device
@@ -141,15 +156,19 @@ class UDLM(nn.Module):
 
         for _ in range(c.micro_steps):
             dq = torch.tanh(self.route_update(torch.cat([q, x, h, theta], dim=-1)))
-            q = c.q_decay * q + c.q_step * dq
-            q = self._rms_cap(q, c.state_rms_cap)
+            q = self._homeostatic_update(
+                q, dq, decay=c.q_decay, step=c.q_step,
+                target=c.q_rms_target, cap=c.q_rms_cap, strength=c.homeostasis_strength,
+            )
 
             x_s, x_d = x[:, src], x[:, dst]
             q_s, q_d = q[:, src], q[:, dst]
             h_s, h_d = h[:, src], h[:, dst]
             dr = torch.tanh(self.rel_update(torch.cat([r, x_s, x_d, q_s, q_d, h_s, h_d], dim=-1)))
-            r = c.r_decay * r + c.r_step * dr
-            r = self._rms_cap(r, c.state_rms_cap)
+            r = self._homeostatic_update(
+                r, dr, decay=c.r_decay, step=c.r_step,
+                target=c.r_rms_target, cap=c.r_rms_cap, strength=c.homeostasis_strength,
+            )
 
             th_s, th_d = theta[:, src], theta[:, dst]
             msg_e = self.message(torch.cat([x_s, r, q_s, th_s, th_d], dim=-1))
@@ -185,7 +204,6 @@ class UDLM(nn.Module):
 
     @staticmethod
     def _mask_non_emittable(logits: Tensor) -> Tensor:
-        # BOS and PAD are protocol symbols, never autonomous surface output.
         masked = logits.clone()
         masked[..., BOS] = float("-inf")
         masked[..., PAD] = float("-inf")
