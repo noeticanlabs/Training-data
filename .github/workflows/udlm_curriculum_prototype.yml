@@ -103,6 +103,57 @@ jobs:
             --max-new-bytes 128 \
             2>&1 | tee artifacts/training.log
 
+      - name: Automatically diagnose stopped lineage with RPAIR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          from udlm.rpair_diagnose import write_stage_diagnosis
+
+          root = Path('artifacts/stage_frozen')
+          summary = json.loads((root / 'lineage_summary.json').read_text(encoding='utf-8'))
+          if not summary.get('stopped'):
+              print('RPAIR diagnosis: lineage did not stop; no failed stage to diagnose')
+              raise SystemExit(0)
+
+          stage = summary['last_stage']
+          path = write_stage_diagnosis(
+              root,
+              stage,
+              context=128,
+              validation_fraction=0.20,
+              max_retention_regression=0.10,
+              rail_limit=0.90,
+              max_new_bytes=128,
+              device_name='cpu',
+          )
+          diagnosis = json.loads(path.read_text(encoding='utf-8'))
+
+          # Bind the diagnosis into the frozen stage artifact manifest.
+          manifest_path = root / stage / 'manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          raw = path.read_bytes()
+          manifest['files']['rpair_diagnosis.json'] = {
+              'bytes': len(raw),
+              'sha256': hashlib.sha256(raw).hexdigest(),
+          }
+          manifest['rpair_diagnosis'] = {
+              'primary_fault': diagnosis['primary_fault'],
+              'failure_class': diagnosis['failure_class'],
+              'diagnostic_confidence': diagnosis['diagnostic_confidence'],
+          }
+          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True), encoding='utf-8')
+
+          print('RPAIR failed_stage=', stage)
+          print('RPAIR failure_class=', diagnosis['failure_class'])
+          print('RPAIR primary_fault=', diagnosis['primary_fault'])
+          print('RPAIR confidence=', diagnosis['diagnostic_confidence'])
+          print('RPAIR worst_affected=', diagnosis['worst_affected_certified_stage'])
+          print('RPAIR continuation_requirement=', diagnosis['continuation_requirement'])
+          PY
+
       - name: Validate frozen stage artifacts
         shell: bash
         run: |
@@ -132,6 +183,8 @@ jobs:
               for name in ('parent.pt','candidate.pt','canonical.pt','curriculum.txt','report.json','receipt.json','manifest.json'):
                   if not (d / name).is_file():
                       raise SystemExit(f'{stage}: missing {name}')
+              if row['decision'] != 'ADMIT' and not (d / 'rpair_diagnosis.json').is_file():
+                  raise SystemExit(f'{stage}: stopped stage missing automatic RPAIR diagnosis')
               manifest = json.loads((d / 'manifest.json').read_text(encoding='utf-8'))
               for name, meta in manifest['files'].items():
                   p = d / name
@@ -156,12 +209,12 @@ jobs:
               if p.is_file():
                   files[str(p.relative_to(root))] = {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
           manifest = {
-              'kind': 'udlm-certified-stage-frozen-build-v1',
+              'kind': 'udlm-certified-stage-frozen-build-v2-rpair-auto-diagnosis',
               'engine': 'UDLM-v0.1 homeostatic payload/routing dynamics',
               'training_policy': 'C0-C8 developmental curriculum; each executed stage freezes parent, candidate, canonical, receipt, report, curriculum and manifest',
               'progression_policy': 'next stage executes only after prior ADMIT; HOLD or REJECT stops lineage',
+              'rpair_policy': 'every stopped lineage automatically receives an evidence-bounded RPAIR diagnosis before artifact validation; diagnosis has no mutation authority',
               'validation_semantics': 'disjoint within-source heldout bytes excluded from replay training',
-              'architecture_change_from_run_12': 'none',
               'git_sha': os.environ.get('GITHUB_SHA'),
               'built_at_unix': time.time(),
               'files': files,
