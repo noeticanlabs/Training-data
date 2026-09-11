@@ -1,8 +1,6 @@
 """UDLM-v0.1 working prototype.
 
-The v0.1 carrier is deliberately architecture-light but now separates preserved
-payload from routing dynamics.  This revision incorporates lessons from the
-FSLM3 payload-preserving, resonant/competitive-uptake, and GI homeostasis work:
+The v0.1 carrier separates preserved payload from routing dynamics:
 
 * X: payload/content carrier (residual, not a bounded destination)
 * Q: routing/uptake state
@@ -185,6 +183,14 @@ class UDLM(nn.Module):
             outs.append(logits)
         return torch.stack(outs, dim=1), state
 
+    @staticmethod
+    def _mask_non_emittable(logits: Tensor) -> Tensor:
+        # BOS and PAD are protocol symbols, never autonomous surface output.
+        masked = logits.clone()
+        masked[..., BOS] = float("-inf")
+        masked[..., PAD] = float("-inf")
+        return masked
+
     @torch.no_grad()
     def generate(self, prompt: bytes, max_new_bytes: int = 128, *, greedy: bool = True, temperature: float = 1.0) -> bytes:
         self.eval()
@@ -195,15 +201,18 @@ class UDLM(nn.Module):
             logits, state = self.step(token, state)
         out = bytearray()
         for _ in range(max_new_bytes):
+            emit_logits = self._mask_non_emittable(logits)
             if greedy:
-                nxt = int(logits.argmax(dim=-1).item())
+                nxt = int(emit_logits.argmax(dim=-1).item())
             else:
-                probs = F.softmax(logits / max(temperature, 1e-4), dim=-1)
+                probs = F.softmax(emit_logits / max(temperature, 1e-4), dim=-1)
                 nxt = int(torch.multinomial(probs, 1).item())
             if nxt == EOS:
                 break
             if 0 <= nxt <= 255:
                 out.append(nxt)
+            else:
+                raise RuntimeError(f"non-emittable token escaped generation mask: {nxt}")
             token = torch.tensor([nxt], device=self.theta.device, dtype=torch.long)
             logits, state = self.step(token, state)
         return bytes(out)
