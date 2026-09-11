@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/udlm_curriculum_prototype.yml'
+      - 'udlm/**'
       - 'udlm_source_text/**'
   workflow_dispatch:
 
@@ -33,15 +34,10 @@ jobs:
           set -euo pipefail
           rm -rf udlm_curriculum
           mkdir -p udlm_curriculum/00_language udlm_curriculum/10_doctrine
-
-          # Deliberately exclude root *.dat files. They are binary containers,
-          # not raw UTF-8 language, and caused the previous null-byte attractor.
-          cp udlm_source_text/Fundamentals_of_Language_Reference.md \
-             udlm_curriculum/00_language/00_fundamentals_of_language.md
+          cp udlm_source_text/Fundamentals_of_Language_Reference.md udlm_curriculum/00_language/00_fundamentals_of_language.md
           cp README.md udlm_curriculum/10_doctrine/10_training_data_readme.md
           cp docs/DATA_ARCHITECTURE.md udlm_curriculum/10_doctrine/20_data_architecture.md
           cp docs/RESEARCH_GRAPH.md udlm_curriculum/10_doctrine/30_research_graph.md
-
           python - <<'PY'
           from pathlib import Path
           total = 0
@@ -78,17 +74,22 @@ jobs:
             --max-new-bytes 128 \
             2>&1 | tee artifacts/training.log
 
-      - name: Smoke-load checkpoint
+      - name: Smoke-load checkpoint and inspect dynamic range
         shell: bash
         run: |
           python - <<'PY' | tee artifacts/generation_smoke.txt
           import torch
-          from udlm.model import UDLM, UDLMConfig
+          from udlm.model import UDLM, UDLMConfig, BOS
           payload = torch.load('artifacts/udlm_curriculum_prototype.pt', map_location='cpu')
           model = UDLM(UDLMConfig(**payload['config']))
           model.load_state_dict(payload['state_dict'])
           model.eval()
           for prompt in [b'The ', b'Language ', b'Memory ']:
+              state = model.initial_state(1)
+              logits = None
+              for tok in [BOS] + list(prompt):
+                  logits, state = model.step(torch.tensor([tok]), state)
+              print(f'prompt={prompt!r} X_abs_mean={state.x.abs().mean().item():.4f} X_rail={(state.x.abs()>0.95).float().mean().item():.4f} R_abs_mean={state.r.abs().mean().item():.4f} R_rail={(state.r.abs()>0.95).float().mean().item():.4f}')
               out = model.generate(prompt, max_new_bytes=128, greedy=True)
               print(prompt.decode('utf-8') + out.decode('utf-8', errors='replace'))
           PY
@@ -102,13 +103,10 @@ jobs:
           files = {}
           for p in sorted(root.iterdir()):
               if p.is_file():
-                  files[p.name] = {
-                      'bytes': p.stat().st_size,
-                      'sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
-                  }
+                  files[p.name] = {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
           manifest = {
               'kind': 'udlm-working-prototype-build-v1',
-              'engine_ref': 'vendored UDLM-v0.1 runtime in noeticanlabs/Training-data',
+              'engine_ref': 'UDLM-v0.1 headroom-preserving dynamics',
               'trainer': 'copilot-style-curriculum-v1',
               'curriculum_policy': 'clean UTF-8 only; binary .dat excluded',
               'built_at_unix': time.time(),
