@@ -1,4 +1,4 @@
-name: UDLM curriculum prototype
+name: UDLM certified learning prototype
 
 on:
   push:
@@ -53,12 +53,13 @@ jobs:
           print(f'clean curriculum bytes={total:,}')
           PY
 
-      - name: Train persistent UDLM checkpoint
+      - name: Run certified learning loop
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf artifacts
           mkdir -p artifacts
-          python -m udlm.run_curriculum udlm_curriculum \
+          python -m udlm.run_certified udlm_curriculum \
             --device cpu \
             --steps-per-file 200 \
             --batch-size 4 \
@@ -66,32 +67,40 @@ jobs:
             --lr 0.0015 \
             --replay-ratio 0.35 \
             --replay-bytes 262144 \
-            --max-replay-regression 0.20 \
-            --lesson-tolerance 0.02 \
-            --checkpoint artifacts/udlm_curriculum_prototype.pt \
-            --receipts artifacts/udlm_curriculum_receipts.jsonl \
-            --prompt 'The system ' \
+            --validation-fraction 0.20 \
+            --min-acquisition-gain 0.02 \
+            --min-validation-gain 0.01 \
+            --max-replay-regression 0.10 \
+            --hard-replay-regression 0.25 \
+            --max-generation-regression 0.12 \
+            --rail-limit 0.90 \
+            --checkpoint artifacts/udlm_certified.pt \
+            --receipts artifacts/udlm_certified_receipts.jsonl \
+            --capabilities artifacts/udlm_capability_memory.jsonl \
+            --failures artifacts/udlm_failure_memory.jsonl \
+            --held-dir artifacts/held_candidates \
+            --report artifacts/udlm_certified_report.json \
             --max-new-bytes 128 \
             2>&1 | tee artifacts/training.log
 
-      - name: Smoke-load checkpoint and inspect dynamic range
+      - name: Validate certified artifacts
         shell: bash
         run: |
-          python - <<'PY' | tee artifacts/generation_smoke.txt
-          import torch
-          from udlm.model import UDLM, UDLMConfig, BOS
-          payload = torch.load('artifacts/udlm_curriculum_prototype.pt', map_location='cpu')
-          model = UDLM(UDLMConfig(**payload['config']))
-          model.load_state_dict(payload['state_dict'])
-          model.eval()
-          for prompt in [b'The ', b'Language ', b'Memory ']:
-              state = model.initial_state(1)
-              logits = None
-              for tok in [BOS] + list(prompt):
-                  logits, state = model.step(torch.tensor([tok]), state)
-              print(f'prompt={prompt!r} X_abs_mean={state.x.abs().mean().item():.4f} X_rail={(state.x.abs()>0.95).float().mean().item():.4f} R_abs_mean={state.r.abs().mean().item():.4f} R_rail={(state.r.abs()>0.95).float().mean().item():.4f}')
-              out = model.generate(prompt, max_new_bytes=128, greedy=True)
-              print(prompt.decode('utf-8') + out.decode('utf-8', errors='replace'))
+          set -euo pipefail
+          test -s artifacts/udlm_certified.pt
+          test -s artifacts/udlm_certified_receipts.jsonl
+          test -s artifacts/udlm_certified_report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('artifacts/udlm_certified_report.json').read_text(encoding='utf-8'))
+          print('canonical_model_hash=', report['canonical_model_hash'])
+          print('counts=', report['counts'])
+          for prompt, row in report['generation_panel'].items():
+              print(f'{prompt!r}: {row["text"]!r}')
+              print('  metrics=', row['metrics'])
+              print('  X=', row['state']['x'])
+              print('  R=', row['state']['r'])
           PY
 
       - name: Write build manifest
@@ -101,13 +110,15 @@ jobs:
           import hashlib, json, pathlib, time
           root = pathlib.Path('artifacts')
           files = {}
-          for p in sorted(root.iterdir()):
+          for p in sorted(root.rglob('*')):
               if p.is_file():
-                  files[p.name] = {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
+                  files[str(p.relative_to(root))] = {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
           manifest = {
-              'kind': 'udlm-working-prototype-build-v1',
-              'engine_ref': 'UDLM-v0.1 headroom-preserving dynamics',
-              'trainer': 'copilot-style-curriculum-v1',
+              'kind': 'udlm-certified-learning-build-v1',
+              'engine': 'UDLM-v0.1 payload/routing dynamics',
+              'trainer': 'candidate -> challenge -> ADMIT/HOLD/REJECT -> diagnose -> receipt',
+              'learning_boundary': 'weight update is a candidate; only admitted candidates become canonical',
+              'repair_boundary': 'failure classification records continuation requirements; no unverified automatic architecture repair',
               'curriculum_policy': 'clean UTF-8 only; binary .dat excluded',
               'built_at_unix': time.time(),
               'files': files,
@@ -115,10 +126,10 @@ jobs:
           (root / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
           PY
 
-      - name: Upload working prototype
+      - name: Upload certified prototype
         uses: actions/upload-artifact@v4
         with:
-          name: udlm-curriculum-working-prototype
+          name: udlm-certified-learning-prototype
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
