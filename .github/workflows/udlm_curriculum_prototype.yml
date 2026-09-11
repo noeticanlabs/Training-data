@@ -7,6 +7,7 @@ on:
       - '.github/workflows/udlm_curriculum_prototype.yml'
       - 'udlm/**'
       - 'udlm_source_text/**'
+      - 'curriculum/udlm_v01/**'
   workflow_dispatch:
 
 permissions:
@@ -36,38 +37,52 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q udlm
+          python -m compileall -q udlm curriculum/udlm_v01
           python -m udlm.preflight
 
-      - name: Build clean UTF-8 curriculum
+      - name: Build staged C0-C8 UTF-8 curriculum
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf udlm_curriculum
-          mkdir -p udlm_curriculum/00_language udlm_curriculum/10_doctrine
-          cp udlm_source_text/Fundamentals_of_Language_Reference.md udlm_curriculum/00_language/00_fundamentals_of_language.md
-          cp README.md udlm_curriculum/10_doctrine/10_training_data_readme.md
-          cp docs/DATA_ARCHITECTURE.md udlm_curriculum/10_doctrine/20_data_architecture.md
-          cp docs/RESEARCH_GRAPH.md udlm_curriculum/10_doctrine/30_research_graph.md
+          python curriculum/udlm_v01/build_staged_curriculum.py
+
+          # C8 is the first stage allowed to absorb the existing dense technical prose.
+          # Append it to the natural-language stage instead of presenting it to the
+          # unformed model at the beginning of training.
+          {
+            printf '\n\nUDLM C8 domain expansion — academic language reference.\n\n'
+            cat udlm_source_text/Fundamentals_of_Language_Reference.md
+            printf '\n\nUDLM C8 domain expansion — governed training data.\n\n'
+            cat README.md
+            printf '\n\nUDLM C8 domain expansion — data architecture.\n\n'
+            cat docs/DATA_ARCHITECTURE.md
+            printf '\n\nUDLM C8 domain expansion — research graph.\n\n'
+            cat docs/RESEARCH_GRAPH.md
+          } >> udlm_curriculum/08_natural/08_natural.txt
+
           python - <<'PY'
           from pathlib import Path
           total = 0
           files = []
-          for p in sorted(Path('udlm_curriculum').rglob('*')):
-              if not p.is_file():
-                  continue
+          stages = []
+          for p in sorted(Path('udlm_curriculum').rglob('*.txt')):
               raw = p.read_bytes()
               raw.decode('utf-8')
               if b'\x00' in raw:
                   raise SystemExit(f'NUL byte found in curriculum source: {p}')
-              if len(raw) < 64:
-                  raise SystemExit(f'curriculum source too short for disjoint holdout: {p}')
+              if len(raw) < 512:
+                  raise SystemExit(f'curriculum stage too short for disjoint holdout: {p}')
               total += len(raw)
               files.append(str(p))
+              stages.append(p.parent.name)
               print(f'{p}: {len(raw):,} bytes UTF-8 OK')
-          if not files:
-              raise SystemExit('no curriculum files built')
-          print(f'clean curriculum files={len(files)} bytes={total:,}')
+          expected = [f'{i:02d}_' for i in range(9)]
+          if len(files) != 9:
+              raise SystemExit(f'expected exactly 9 C0-C8 stage files, found {len(files)}')
+          for prefix in expected:
+              if not any(s.startswith(prefix) for s in stages):
+                  raise SystemExit(f'missing curriculum stage {prefix}')
+          print(f'staged curriculum files={len(files)} bytes={total:,}')
           PY
 
       - name: Run certified learning loop
@@ -156,13 +171,14 @@ jobs:
                       'sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
                   }
           manifest = {
-              'kind': 'udlm-certified-learning-build-v2',
-              'engine': 'UDLM-v0.1 payload/routing dynamics',
+              'kind': 'udlm-certified-learning-build-v3-staged-curriculum',
+              'engine': 'UDLM-v0.1 payload/routing dynamics with homeostatic Q/R regulation',
               'trainer': 'candidate -> challenge -> ADMIT/HOLD/REJECT -> diagnose -> receipt',
               'learning_boundary': 'weight update is a candidate; only admitted candidates become canonical',
               'repair_boundary': 'failure classification records continuation requirements; no unverified automatic architecture repair',
               'validation_semantics': 'disjoint within-source heldout bytes are excluded from replay training and retained separately',
-              'curriculum_policy': 'clean UTF-8 only; binary .dat excluded',
+              'curriculum_policy': 'C0 surface -> C1 lexical -> C2 sentence -> C3 grammar -> C4 relation -> C5 context -> C6 QA/consequence -> C7 repair -> C8 natural/domain expansion; clean UTF-8 only',
+              'architecture_change_from_run_11': 'none',
               'git_sha': os.environ.get('GITHUB_SHA'),
               'built_at_unix': time.time(),
               'files': files,
