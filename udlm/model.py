@@ -1,21 +1,17 @@
-"""UDLM-v0.1 developmental seed.
+"""UDLM-v0.1 working prototype.
 
-A deliberately small byte-level recurrent dynamical language model built from:
-- homogeneous node primitives
-- sparse stateful directed relations
-- fast carrier state X
-- relational edge state R
-- temporal trace H
-- slow learned condition Theta
-- fixed (non-learned) byte excitation
-- one shared local evolution law
-- minimal 259-way readout
+The v0.1 carrier is deliberately architecture-light but now separates preserved
+payload from routing dynamics.  This revision incorporates lessons from the
+FSLM3 payload-preserving, resonant/competitive-uptake, and GI homeostasis work:
 
-No attention, GRU/LSTM cell, token embedding table, or specialist F0/F1/F2 modules.
+* X: payload/content carrier (residual, not a bounded destination)
+* Q: routing/uptake state
+* R: edge relational state
+* H: trajectory/history state
+* Theta: slow learned local condition
 
-Revision: the carrier and relation recurrences use bounded leaky interpolation
-rather than repeatedly applying tanh to the accumulated state. This preserves
-state-space headroom and keeps new byte excitation consequential.
+No attention, token embedding table, GRU/LSTM cell, or specialist language
+modules are used.
 """
 from __future__ import annotations
 
@@ -36,6 +32,7 @@ PAD = 258
 class UDLMConfig:
     n_nodes: int = 16
     d_state: int = 16
+    d_route: int = 8
     d_rel: int = 8
     d_hist: int = 8
     d_theta: int = 8
@@ -43,8 +40,13 @@ class UDLMConfig:
     micro_steps: int = 2
     vocab_size: int = VOCAB_SIZE
     input_gain: float = 3.0
-    x_update_rate: float = 0.35
-    rel_update_rate: float = 0.20
+    x_decay: float = 0.985
+    x_step: float = 0.30
+    q_decay: float = 0.96
+    q_step: float = 0.20
+    r_decay: float = 0.97
+    r_step: float = 0.15
+    state_rms_cap: float = 1.25
 
 
 @dataclass
@@ -52,9 +54,10 @@ class UDLMState:
     x: Tensor
     r: Tensor
     h: Tensor
+    q: Tensor
 
     def detach(self) -> "UDLMState":
-        return UDLMState(self.x.detach(), self.r.detach(), self.h.detach())
+        return UDLMState(self.x.detach(), self.r.detach(), self.h.detach(), self.q.detach())
 
 
 class UDLM(nn.Module):
@@ -69,15 +72,20 @@ class UDLM(nn.Module):
         self.theta = nn.Parameter(torch.zeros(cfg.n_nodes, cfg.d_theta))
         nn.init.normal_(self.theta, mean=0.0, std=0.02)
 
-        rel_in = cfg.d_rel + 2 * cfg.d_state + 2 * cfg.d_hist
+        route_in = cfg.d_route + cfg.d_state + cfg.d_hist + cfg.d_theta
+        self.route_update = nn.Sequential(nn.Linear(route_in, cfg.hidden), nn.Tanh(), nn.Linear(cfg.hidden, cfg.d_route))
+        rel_in = cfg.d_rel + 2 * cfg.d_state + 2 * cfg.d_route + 2 * cfg.d_hist
         self.rel_update = nn.Sequential(nn.Linear(rel_in, cfg.hidden), nn.Tanh(), nn.Linear(cfg.hidden, cfg.d_rel))
-        msg_in = cfg.d_state + cfg.d_rel + 2 * cfg.d_theta
+        msg_in = cfg.d_state + cfg.d_rel + cfg.d_route + 2 * cfg.d_theta
         self.message = nn.Sequential(nn.Linear(msg_in, cfg.hidden), nn.Tanh(), nn.Linear(cfg.hidden, cfg.d_state))
-        node_in = cfg.d_state + cfg.d_state + cfg.d_state + cfg.d_hist + cfg.d_theta
-        self.node_update = nn.Sequential(nn.Linear(node_in, cfg.hidden), nn.Tanh(), nn.Linear(cfg.hidden, cfg.d_state))
-        self.hist_update = nn.Sequential(nn.Linear(cfg.d_hist + cfg.d_state, cfg.hidden // 2), nn.Tanh(), nn.Linear(cfg.hidden // 2, cfg.d_hist))
+        uptake_in = cfg.d_state + cfg.d_state + cfg.d_state + cfg.d_route + cfg.d_hist + cfg.d_theta
+        self.uptake = nn.Sequential(nn.Linear(uptake_in, cfg.hidden), nn.Tanh(), nn.Linear(cfg.hidden, cfg.d_state))
+        self.content_delta = nn.Sequential(nn.Linear(uptake_in, cfg.hidden), nn.Tanh(), nn.Linear(cfg.hidden, cfg.d_state))
+        self.hist_update = nn.Sequential(
+            nn.Linear(cfg.d_hist + cfg.d_state + cfg.d_route, cfg.hidden // 2), nn.Tanh(), nn.Linear(cfg.hidden // 2, cfg.d_hist)
+        )
         self.hist_gate_logit = nn.Parameter(torch.tensor(2.0))
-        readout_in = 2 * cfg.d_state + cfg.d_hist + cfg.d_rel
+        readout_in = cfg.n_nodes * cfg.d_state + cfg.d_route + cfg.d_hist + cfg.d_rel
         self.readout = nn.Linear(readout_in, cfg.vocab_size)
 
     @staticmethod
@@ -105,6 +113,11 @@ class UDLM(nn.Module):
         bits = (((token.unsqueeze(-1) >> bit_idx) & 1).float() * 2.0 - 1.0)
         return F.normalize(harmonic + 0.5 * bits, dim=-1)
 
+    @staticmethod
+    def _rms_cap(v: Tensor, cap: float) -> Tensor:
+        rms = v.square().mean(dim=-1, keepdim=True).add(1e-8).sqrt()
+        return v * torch.clamp(cap / rms, max=1.0)
+
     def initial_state(self, batch_size: int, device: Optional[torch.device] = None) -> UDLMState:
         c = self.cfg
         device = device or self.theta.device
@@ -112,11 +125,12 @@ class UDLM(nn.Module):
             x=torch.zeros(batch_size, c.n_nodes, c.d_state, device=device),
             r=torch.zeros(batch_size, self.n_edges, c.d_rel, device=device),
             h=torch.zeros(batch_size, c.n_nodes, c.d_hist, device=device),
+            q=torch.zeros(batch_size, c.n_nodes, c.d_route, device=device),
         )
 
     def step(self, token: Tensor, state: UDLMState, *, reset_rel: bool = False, reset_hist: bool = False):
         c = self.cfg
-        x, r, h = state.x, state.r, state.h
+        x, r, h, q = state.x, state.r, state.h, state.q
         if reset_rel:
             r = torch.zeros_like(r)
         if reset_hist:
@@ -126,33 +140,41 @@ class UDLM(nn.Module):
         external = c.input_gain * exc.unsqueeze(1) * self.input_pattern.unsqueeze(0)
         theta = self.theta.unsqueeze(0).expand(x.size(0), -1, -1)
         src, dst = self.edge_src, self.edge_dst
-        alpha_x = float(c.x_update_rate)
-        alpha_r = float(c.rel_update_rate)
 
         for _ in range(c.micro_steps):
+            dq = torch.tanh(self.route_update(torch.cat([q, x, h, theta], dim=-1)))
+            q = c.q_decay * q + c.q_step * dq
+            q = self._rms_cap(q, c.state_rms_cap)
+
             x_s, x_d = x[:, src], x[:, dst]
+            q_s, q_d = q[:, src], q[:, dst]
             h_s, h_d = h[:, src], h[:, dst]
-            dr = self.rel_update(torch.cat([r, x_s, x_d, h_s, h_d], dim=-1))
-            r_candidate = torch.tanh(dr)
-            r = (1.0 - alpha_r) * r + alpha_r * r_candidate
+            dr = torch.tanh(self.rel_update(torch.cat([r, x_s, x_d, q_s, q_d, h_s, h_d], dim=-1)))
+            r = c.r_decay * r + c.r_step * dr
+            r = self._rms_cap(r, c.state_rms_cap)
+
             th_s, th_d = theta[:, src], theta[:, dst]
-            msg_e = self.message(torch.cat([x_s, r, th_s, th_d], dim=-1))
+            msg_e = self.message(torch.cat([x_s, r, q_s, th_s, th_d], dim=-1))
             incoming = torch.zeros_like(x)
             idx = dst.view(1, -1, 1).expand(x.size(0), -1, c.d_state)
             incoming.scatter_add_(1, idx, msg_e)
             degree = torch.zeros(c.n_nodes, device=x.device, dtype=x.dtype)
             degree.scatter_add_(0, dst, torch.ones_like(dst, dtype=x.dtype))
             incoming = incoming / degree.clamp_min(1.0).view(1, -1, 1)
-            proposal_raw = self.node_update(torch.cat([x, incoming, external, h, theta], dim=-1))
-            x_candidate = torch.tanh(proposal_raw)
-            x = (1.0 - alpha_x) * x + alpha_x * x_candidate
-            h_prop = self.hist_update(torch.cat([h, x], dim=-1))
-            keep = torch.sigmoid(self.hist_gate_logit)
-            h = keep * h + (1.0 - keep) * torch.tanh(h_prop)
 
-        z = torch.cat([x.mean(dim=1), x.amax(dim=1), h.mean(dim=1), r.mean(dim=1)], dim=-1)
+            local = torch.cat([x, incoming, external, q, h, theta], dim=-1)
+            gate = torch.sigmoid(self.uptake(local))
+            dx = torch.tanh(self.content_delta(local))
+            x = c.x_decay * x + c.x_step * gate * dx + 0.10 * gate * external
+            x = self._rms_cap(x, c.state_rms_cap)
+
+            h_prop = torch.tanh(self.hist_update(torch.cat([h, x, q], dim=-1)))
+            keep = torch.sigmoid(self.hist_gate_logit)
+            h = keep * h + (1.0 - keep) * h_prop
+
+        z = torch.cat([x.reshape(x.size(0), -1), q.mean(dim=1), h.mean(dim=1), r.mean(dim=1)], dim=-1)
         logits = self.readout(z)
-        return logits, UDLMState(x=x, r=r, h=h)
+        return logits, UDLMState(x=x, r=r, h=h, q=q)
 
     def forward(self, tokens: Tensor, state: Optional[UDLMState] = None, *, reset_rel_each_token: bool = False, reset_hist_each_token: bool = False):
         if state is None:
@@ -173,7 +195,6 @@ class UDLM(nn.Module):
             logits, state = self.step(token, state)
         out = bytearray()
         for _ in range(max_new_bytes):
-            assert logits is not None
             if greedy:
                 nxt = int(logits.argmax(dim=-1).item())
             else:
