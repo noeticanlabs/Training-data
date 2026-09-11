@@ -45,10 +45,6 @@ jobs:
         run: |
           set -euo pipefail
           python curriculum/udlm_v01/build_staged_curriculum.py
-
-          # C8 is the first stage allowed to absorb the existing dense technical prose.
-          # Append it to the natural-language stage instead of presenting it to the
-          # unformed model at the beginning of training.
           {
             printf '\n\nUDLM C8 domain expansion — academic language reference.\n\n'
             cat udlm_source_text/Fundamentals_of_Language_Reference.md
@@ -59,41 +55,37 @@ jobs:
             printf '\n\nUDLM C8 domain expansion — research graph.\n\n'
             cat docs/RESEARCH_GRAPH.md
           } >> udlm_curriculum/08_natural/08_natural.txt
-
           python - <<'PY'
           from pathlib import Path
+          files = sorted(Path('udlm_curriculum').rglob('*.txt'))
+          if len(files) != 9:
+              raise SystemExit(f'expected exactly 9 C0-C8 stage files, found {len(files)}')
           total = 0
-          files = []
           stages = []
-          for p in sorted(Path('udlm_curriculum').rglob('*.txt')):
-              raw = p.read_bytes()
-              raw.decode('utf-8')
+          for p in files:
+              raw = p.read_bytes(); raw.decode('utf-8')
               if b'\x00' in raw:
                   raise SystemExit(f'NUL byte found in curriculum source: {p}')
               if len(raw) < 512:
-                  raise SystemExit(f'curriculum stage too short for disjoint holdout: {p}')
-              total += len(raw)
-              files.append(str(p))
-              stages.append(p.parent.name)
+                  raise SystemExit(f'curriculum stage too short for holdout: {p}')
+              total += len(raw); stages.append(p.parent.name)
               print(f'{p}: {len(raw):,} bytes UTF-8 OK')
-          expected = [f'{i:02d}_' for i in range(9)]
-          if len(files) != 9:
-              raise SystemExit(f'expected exactly 9 C0-C8 stage files, found {len(files)}')
-          for prefix in expected:
-              if not any(s.startswith(prefix) for s in stages):
-                  raise SystemExit(f'missing curriculum stage {prefix}')
+          for i in range(9):
+              if not any(s.startswith(f'{i:02d}_') for s in stages):
+                  raise SystemExit(f'missing curriculum stage C{i}')
           print(f'staged curriculum files={len(files)} bytes={total:,}')
           PY
 
-      - name: Run certified learning loop
+      - name: Run stage-frozen certified lineage
         shell: bash
         run: |
           set -euo pipefail
           rm -rf artifacts
           mkdir -p artifacts
-          python -m udlm.run_certified udlm_curriculum \
+          python -m udlm.run_stage_frozen udlm_curriculum \
+            --out artifacts/stage_frozen \
             --device cpu \
-            --steps-per-file 200 \
+            --steps-per-stage 200 \
             --batch-size 4 \
             --context 128 \
             --lr 0.0015 \
@@ -108,51 +100,48 @@ jobs:
             --max-generation-regression 0.12 \
             --hard-generation-regression 0.20 \
             --rail-limit 0.90 \
-            --checkpoint artifacts/udlm_certified.pt \
-            --receipts artifacts/udlm_certified_receipts.jsonl \
-            --capabilities artifacts/udlm_capability_memory.jsonl \
-            --failures artifacts/udlm_failure_memory.jsonl \
-            --held-dir artifacts/held_candidates \
-            --report artifacts/udlm_certified_report.json \
             --max-new-bytes 128 \
             2>&1 | tee artifacts/training.log
 
-      - name: Validate certified artifacts
+      - name: Validate frozen stage artifacts
         shell: bash
         run: |
           set -euo pipefail
-          test -s artifacts/udlm_certified.pt
-          test -s artifacts/udlm_certified_receipts.jsonl
-          test -s artifacts/udlm_certified_report.json
+          test -s artifacts/stage_frozen/lineage_summary.json
+          test -s artifacts/stage_frozen/lineage_receipts.jsonl
+          test -s artifacts/stage_frozen/latest_certified.pt
           python - <<'PY'
-          import json
-          import torch
+          import hashlib, json
           from pathlib import Path
+          import torch
           from udlm.model import UDLM, UDLMConfig
           from udlm.run_certified import model_hash, validate_receipt_chain
 
-          report = json.loads(Path('artifacts/udlm_certified_report.json').read_text(encoding='utf-8'))
-          payload = torch.load('artifacts/udlm_certified.pt', map_location='cpu')
+          root = Path('artifacts/stage_frozen')
+          summary = json.loads((root / 'lineage_summary.json').read_text(encoding='utf-8'))
+          tail = validate_receipt_chain(root / 'lineage_receipts.jsonl')
+          if tail != summary['last_receipt_hash']:
+              raise SystemExit('lineage receipt tail mismatch')
+          payload = torch.load(root / 'latest_certified.pt', map_location='cpu')
           model = UDLM(UDLMConfig(**payload['config']))
           model.load_state_dict(payload['state_dict'])
-          checkpoint_hash = model_hash(model)
-          ledger_tail = validate_receipt_chain(Path('artifacts/udlm_certified_receipts.jsonl'))
-          if checkpoint_hash != report['canonical_model_hash']:
-              raise SystemExit('canonical checkpoint hash does not match report')
-          if ledger_tail != report['last_receipt']:
-              raise SystemExit('receipt ledger tail does not match report')
-          if payload.get('metadata', {}).get('canonical_model_hash') != checkpoint_hash:
-              raise SystemExit('checkpoint metadata hash does not match checkpoint')
-
-          print('canonical_model_hash=', checkpoint_hash)
-          print('last_receipt=', ledger_tail)
-          print('counts=', report['counts'])
-          print('validation_semantics=', report['validation_semantics'])
-          for prompt, row in report['generation_panel'].items():
-              print(f'{prompt!r}: {row["text"]!r}')
-              print('  metrics=', row['metrics'])
-              for field in ('x', 'r', 'h', 'q'):
-                  print(f'  {field.upper()}=', row['state'][field])
+          if model_hash(model) != summary['final_canonical_model_hash']:
+              raise SystemExit('latest certified checkpoint hash mismatch')
+          for row in summary['lineage']:
+              stage = row['stage']; d = root / stage
+              for name in ('parent.pt','candidate.pt','canonical.pt','curriculum.txt','report.json','receipt.json','manifest.json'):
+                  if not (d / name).is_file():
+                      raise SystemExit(f'{stage}: missing {name}')
+              manifest = json.loads((d / 'manifest.json').read_text(encoding='utf-8'))
+              for name, meta in manifest['files'].items():
+                  p = d / name
+                  if hashlib.sha256(p.read_bytes()).hexdigest() != meta['sha256']:
+                      raise SystemExit(f'{stage}: SHA mismatch for {name}')
+              print(stage, row['decision'], row['canonical_model_hash'])
+          print('last_stage=', summary['last_stage'])
+          print('last_decision=', summary['last_decision'])
+          print('final_canonical_model_hash=', summary['final_canonical_model_hash'])
+          print('last_receipt_hash=', summary['last_receipt_hash'])
           PY
 
       - name: Write build manifest
@@ -161,24 +150,18 @@ jobs:
         run: |
           python - <<'PY'
           import hashlib, json, os, pathlib, time
-          root = pathlib.Path('artifacts')
-          root.mkdir(parents=True, exist_ok=True)
+          root = pathlib.Path('artifacts'); root.mkdir(parents=True, exist_ok=True)
           files = {}
           for p in sorted(root.rglob('*')):
               if p.is_file():
-                  files[str(p.relative_to(root))] = {
-                      'bytes': p.stat().st_size,
-                      'sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
-                  }
+                  files[str(p.relative_to(root))] = {'bytes': p.stat().st_size, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
           manifest = {
-              'kind': 'udlm-certified-learning-build-v3-staged-curriculum',
-              'engine': 'UDLM-v0.1 payload/routing dynamics with homeostatic Q/R regulation',
-              'trainer': 'candidate -> challenge -> ADMIT/HOLD/REJECT -> diagnose -> receipt',
-              'learning_boundary': 'weight update is a candidate; only admitted candidates become canonical',
-              'repair_boundary': 'failure classification records continuation requirements; no unverified automatic architecture repair',
-              'validation_semantics': 'disjoint within-source heldout bytes are excluded from replay training and retained separately',
-              'curriculum_policy': 'C0 surface -> C1 lexical -> C2 sentence -> C3 grammar -> C4 relation -> C5 context -> C6 QA/consequence -> C7 repair -> C8 natural/domain expansion; clean UTF-8 only',
-              'architecture_change_from_run_11': 'none',
+              'kind': 'udlm-certified-stage-frozen-build-v1',
+              'engine': 'UDLM-v0.1 homeostatic payload/routing dynamics',
+              'training_policy': 'C0-C8 developmental curriculum; each executed stage freezes parent, candidate, canonical, receipt, report, curriculum and manifest',
+              'progression_policy': 'next stage executes only after prior ADMIT; HOLD or REJECT stops lineage',
+              'validation_semantics': 'disjoint within-source heldout bytes excluded from replay training',
+              'architecture_change_from_run_12': 'none',
               'git_sha': os.environ.get('GITHUB_SHA'),
               'built_at_unix': time.time(),
               'files': files,
@@ -186,11 +169,11 @@ jobs:
           (root / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
           PY
 
-      - name: Upload certified prototype or failure diagnostics
+      - name: Upload stage-frozen certified lineage
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: udlm-certified-learning-prototype
+          name: udlm-stage-frozen-certified-lineage
           path: artifacts/
           if-no-files-found: warn
           retention-days: 30
