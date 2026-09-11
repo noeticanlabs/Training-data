@@ -141,6 +141,26 @@ jobs:
           print('RPAIR plasticity passing=',repair['passing_trial_count']); print('RPAIR plasticity best=',repair['best_trial']['name']); print('RPAIR plasticity best_retention=',repair['best_trial']['worst_retention'])
           PY
 
+      - name: Map gradient interference geometry with RPAIR tomography
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,subprocess,sys
+          from pathlib import Path
+          root=Path('artifacts/stage_frozen'); summary=json.loads((root/'lineage_summary.json').read_text())
+          if not summary.get('stopped'): raise SystemExit(0)
+          stage=summary['last_stage']
+          subprocess.run([sys.executable,'-m','udlm.rpair_interference_tomography',str(root),stage,'--context','128','--validation-fraction','0.20','--batches','8','--batch-size','4','--device','cpu'],check=True)
+          p=root/stage/'rpair_interference_tomography.json'; t=json.loads(p.read_text()); mpath=root/stage/'manifest.json'; m=json.loads(mpath.read_text()); raw=p.read_bytes()
+          m['files']['rpair_interference_tomography.json']={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+          m['rpair_interference_tomography']={'worst_global_conflict_stage':t['worst_global_conflict_stage'],'worst_global_cosine':t['worst_global_cosine'],'families_with_conflicts':sorted(t['families_with_conflicts'])}
+          mpath.write_text(json.dumps(m,indent=2,sort_keys=True))
+          print('RPAIR tomography worst_stage=',t['worst_global_conflict_stage'])
+          print('RPAIR tomography worst_cosine=',t['worst_global_cosine'])
+          print('RPAIR tomography conflict_families=',sorted(t['families_with_conflicts']))
+          PY
+
       - name: Validate frozen stage artifacts
         shell: bash
         run: |
@@ -180,7 +200,7 @@ jobs:
           root=pathlib.Path('artifacts'); root.mkdir(parents=True,exist_ok=True); files={}
           for p in sorted(root.rglob('*')):
               if p.is_file(): files[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
-          manifest={'kind':'udlm-certified-stage-frozen-build-v4-rpair-plasticity-repair','engine':'UDLM-v0.1 homeostatic payload/routing dynamics','training_policy':'C0-C8 stage-frozen certified curriculum','progression_policy':'next stage only after ADMIT','rpair_policy':'diagnose -> replay repair -> if unresolved, importance-anchored plasticity repair; no automatic promotion','validation_semantics':'heldout bytes are evaluation-only','git_sha':os.environ.get('GITHUB_SHA'),'built_at_unix':time.time(),'files':files}
+          manifest={'kind':'udlm-certified-stage-frozen-build-v5-rpair-interference-tomography','engine':'UDLM-v0.1 homeostatic payload/routing dynamics','training_policy':'C0-C8 stage-frozen certified curriculum','progression_policy':'next stage only after ADMIT','rpair_policy':'diagnose -> replay repair -> plasticity repair -> gradient interference tomography; no automatic promotion','validation_semantics':'heldout bytes are evaluation-only','git_sha':os.environ.get('GITHUB_SHA'),'built_at_unix':time.time(),'files':files}
           (root/'manifest.json').write_text(json.dumps(manifest,indent=2))
           PY
 
