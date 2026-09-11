@@ -2,138 +2,527 @@ from __future__ import annotations
 
 """UDLM certified learning runtime.
 
-Implements the principles established from CohBit-Copilot and RPAIR without
-copying either runtime: candidate updates are challenged before admission;
-failures are classified and retained as evidence; uncertain candidates are held;
-canonical weights move only on admitted transitions.
+Principles adapted from CohBit-Copilot and RPAIR:
+
+* an optimizer update is a candidate, not admitted learning;
+* failure is captured before it is diagnosed;
+* diagnosis does not imply a repair;
+* canonical weights move only after evidence gates pass.
+
+The runtime keeps training replay and retention evidence separate so held-out
+bytes used for admission are never reused as replay training material.
 """
 
-import argparse, copy, hashlib, json, math, random, time
-from dataclasses import asdict, dataclass
+import argparse
+import copy
+import hashlib
+import json
+import math
+import os
+import random
+import time
+from dataclasses import asdict
 from pathlib import Path
+
 import torch
 import torch.nn.functional as F
-from .model import UDLM, UDLMConfig, BOS
 
-EXT={'.txt','.md','.json','.jsonl','.py','.ts','.rs'}
-PROMPTS=(b'The ',b'Language ',b'Memory ')
+from .model import BOS, EOS, UDLM, UDLMConfig
 
-def cj(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False)
-def shab(b): return hashlib.sha256(b).hexdigest()
-def model_hash(m):
-    h=hashlib.sha256()
-    for n,v in sorted(m.state_dict().items()):
-        h.update(n.encode())
-        raw=v.detach().cpu().contiguous().view(torch.uint8)
+EXT = {".txt", ".md", ".json", ".jsonl", ".py", ".ts", ".rs"}
+PROMPTS = (b"The ", b"Language ", b"Memory ")
+
+
+def canonical_json(obj: dict) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def model_hash(model: UDLM) -> str:
+    """Deterministic state-dict hash with no NumPy dependency."""
+    h = hashlib.sha256()
+    for name, value in sorted(model.state_dict().items()):
+        t = value.detach().cpu().contiguous()
+        h.update(name.encode("utf-8"))
+        h.update(b"\0")
+        h.update(str(t.dtype).encode("ascii"))
+        h.update(b"\0")
+        h.update(",".join(str(x) for x in t.shape).encode("ascii"))
+        h.update(b"\0")
+        raw = t.view(torch.uint8).reshape(-1)
         h.update(bytes(raw.tolist()))
+        h.update(b"\0")
     return h.hexdigest()
 
-def files(root):
-    xs=[p for p in root.rglob('*') if p.is_file() and p.suffix.lower() in EXT]; xs.sort(key=lambda p:p.relative_to(root).as_posix().lower()); return xs
 
-def split(data,f=.2):
-    if len(data)<64:return data,data
-    c=max(32,min(len(data)-32,int(len(data)*(1-f)))); return data[:c],data[c:]
+def curriculum_files(root: Path) -> list[Path]:
+    if not root.is_dir():
+        raise ValueError(f"curriculum directory does not exist: {root}")
+    found = [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in EXT]
+    found.sort(key=lambda p: p.relative_to(root).as_posix().lower())
+    if not found:
+        raise ValueError(f"no supported curriculum files found under {root}")
+    return found
 
-def batch(data,bs,ctx,device):
-    c=min(ctx,len(data)-1); mx=len(data)-c-1
-    ss=[random.randrange(mx+1) if mx>0 else 0 for _ in range(bs)]
-    x=torch.tensor([list(data[s:s+c]) for s in ss],dtype=torch.long,device=device)
-    y=torch.tensor([list(data[s+1:s+c+1]) for s in ss],dtype=torch.long,device=device)
-    return x,y
+
+def split_lesson(data: bytes, validation_fraction: float = 0.20) -> tuple[bytes, bytes]:
+    if not 0.05 <= validation_fraction <= 0.50:
+        raise ValueError("validation_fraction must be between 0.05 and 0.50")
+    if len(data) < 64:
+        raise ValueError("lesson must contain at least 64 bytes for disjoint acquisition/validation")
+    cut = int(len(data) * (1.0 - validation_fraction))
+    cut = max(32, min(len(data) - 32, cut))
+    return data[:cut], data[cut:]
+
+
+def _token_sequence(data: bytes) -> list[int]:
+    # BOS/EOS are trained at true source boundaries; PAD remains reserved.
+    return [BOS, *data, EOS]
+
+
+def _sample_batch(data: bytes, batch_size: int, context: int, device: torch.device):
+    seq = _token_sequence(data)
+    if len(seq) < 3:
+        raise ValueError("data too short for next-symbol prediction")
+    c = min(context, len(seq) - 1)
+    max_start = len(seq) - c - 1
+    starts = [random.randrange(max_start + 1) if max_start > 0 else 0 for _ in range(batch_size)]
+    x = torch.tensor([seq[s:s + c] for s in starts], dtype=torch.long, device=device)
+    y = torch.tensor([seq[s + 1:s + c + 1] for s in starts], dtype=torch.long, device=device)
+    return x, y
+
+
+def _evaluation_starts(seq_len: int, context: int, windows: int) -> tuple[int, list[int]]:
+    c = min(context, seq_len - 1)
+    max_start = seq_len - c - 1
+    if max_start <= 0:
+        return c, [0]
+    n = max(2, min(windows, max_start + 1))
+    starts = sorted({round(i * max_start / (n - 1)) for i in range(n)})
+    return c, starts
+
 
 @torch.no_grad()
-def bpb(m,data,ctx,device,n=4):
-    if len(data)<3:return float('nan')
-    old=random.getstate(); random.seed(0xC0B17+len(data)); m.eval(); tot=0.; cnt=0
-    try:
-        for _ in range(n):
-            x,y=batch(data,2,ctx,device); z,_=m(x); loss=F.cross_entropy(z.reshape(-1,z.size(-1)),y.reshape(-1),reduction='sum'); tot+=float(loss); cnt+=y.numel()
-        return tot/max(cnt,1)/math.log(2)
-    finally: random.setstate(old)
+def bpb(model: UDLM, data: bytes, context: int, device: torch.device, windows: int = 12) -> float:
+    """Deterministic fixed-window BPB; does not touch training RNG."""
+    if len(data) < 3:
+        return float("nan")
+    model.eval()
+    seq = _token_sequence(data)
+    c, starts = _evaluation_starts(len(seq), context, windows)
+    total = 0.0
+    count = 0
+    for start in starts:
+        x = torch.tensor([seq[start:start + c]], dtype=torch.long, device=device)
+        y = torch.tensor([seq[start + 1:start + c + 1]], dtype=torch.long, device=device)
+        logits, _ = model(x)
+        loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), y.reshape(-1), reduction="sum")
+        total += float(loss.item())
+        count += y.numel()
+    return total / max(count, 1) / math.log(2.0)
+
 
 @torch.no_grad()
-def health(m,p):
-    st=m.initial_state(1,m.theta.device); z=None
-    for t in [BOS]+list(p): z,st=m.step(torch.tensor([t],device=m.theta.device),st)
-    def s(v):
-        a=v.abs(); return {'mean_abs':float(a.mean()),'rms':float(v.square().mean().sqrt()),'rail_095':float((a>.95).float().mean()),'max_abs':float(a.max())}
-    return {'x':s(st.x),'r':s(st.r),'h':s(st.h),'q':s(st.q),'top_probability':float(F.softmax(z,-1).max())}
+def health(model: UDLM, prompt: bytes) -> dict:
+    state = model.initial_state(1, model.theta.device)
+    logits = None
+    for tok in [BOS] + list(prompt):
+        logits, state = model.step(torch.tensor([tok], dtype=torch.long, device=model.theta.device), state)
 
-def gm(out):
-    if not out:return {'length':0,'unique_byte_ratio':0.,'dominant_byte_ratio':1.,'space_ratio':0.,'nul_ratio':0.,'short_cycle':True}
-    counts=[out.count(b) for b in set(out)]; tail=out[-min(64,len(out)):]; cyc=False
-    for p in range(1,min(8,len(tail))+1):
-        pat=tail[:p]; reb=(pat*((len(tail)+p-1)//p))[:len(tail)]
-        if sum(a==b for a,b in zip(tail,reb))/len(tail)>=.9:cyc=True;break
-    return {'length':len(out),'unique_byte_ratio':len(set(out))/len(out),'dominant_byte_ratio':max(counts)/len(out),'space_ratio':out.count(32)/len(out),'nul_ratio':out.count(0)/len(out),'short_cycle':cyc}
+    def stats(v: torch.Tensor) -> dict:
+        a = v.detach().abs()
+        return {
+            "mean_abs": float(a.mean().item()),
+            "rms": float(v.detach().square().mean().sqrt().item()),
+            "rail_095": float((a > 0.95).float().mean().item()),
+            "max_abs": float(a.max().item()),
+        }
+
+    return {
+        "x": stats(state.x),
+        "r": stats(state.r),
+        "h": stats(state.h),
+        "q": stats(state.q),
+        "top_probability": float(F.softmax(logits, dim=-1).max().item()) if logits is not None else None,
+    }
+
+
+def generation_metrics(out: bytes) -> dict:
+    if not out:
+        return {
+            "length": 0,
+            "unique_byte_ratio": 0.0,
+            "dominant_byte_ratio": 1.0,
+            "space_ratio": 0.0,
+            "nul_ratio": 0.0,
+            "short_cycle": True,
+        }
+    counts = [out.count(b) for b in set(out)]
+    tail = out[-min(64, len(out)):]
+    short_cycle = False
+    for period in range(1, min(8, len(tail)) + 1):
+        pattern = tail[:period]
+        rebuilt = (pattern * ((len(tail) + period - 1) // period))[:len(tail)]
+        if sum(a == b for a, b in zip(tail, rebuilt)) / len(tail) >= 0.90:
+            short_cycle = True
+            break
+    return {
+        "length": len(out),
+        "unique_byte_ratio": len(set(out)) / len(out),
+        "dominant_byte_ratio": max(counts) / len(out),
+        "space_ratio": out.count(32) / len(out),
+        "nul_ratio": out.count(0) / len(out),
+        "short_cycle": short_cycle,
+    }
+
 
 @torch.no_grad()
-def panel(m,n):
-    r={}
-    for p in PROMPTS:
-        o=m.generate(p,max_new_bytes=n,greedy=True); r[p.decode()]={'text':o.decode('utf-8',errors='replace'),'hex':o.hex(),'metrics':gm(o),'state':health(m,p)}
-    return r
+def generation_panel(model: UDLM, max_new_bytes: int) -> dict:
+    result = {}
+    for prompt in PROMPTS:
+        out = model.generate(prompt, max_new_bytes=max_new_bytes, greedy=True)
+        result[prompt.decode("utf-8")] = {
+            "text": out.decode("utf-8", errors="replace"),
+            "hex": out.hex(),
+            "metrics": generation_metrics(out),
+            "state": health(model, prompt),
+        }
+    return result
 
-def deg(p):
-    vals=[]
-    for r in p.values():
-        x=r['metrics']; vals.append(x['dominant_byte_ratio']+(.25 if x['short_cycle'] else 0)+.25*max(x['space_ratio'],x['nul_ratio']))
-    return sum(vals)/len(vals)
 
-def dyn_bad(p,limit):
-    rs=[]
-    for prompt,row in p.items():
-        for f in ('x','r'):
-            q=row['state'][f]['rail_095']
-            if q>limit:rs.append(f'{f}_rail>{limit:.2f}@{prompt}:{q:.3f}')
-    return bool(rs),rs
+def panel_degeneration(panel: dict) -> float:
+    scores = []
+    for row in panel.values():
+        metrics = row["metrics"]
+        score = metrics["dominant_byte_ratio"]
+        score += 0.25 if metrics["short_cycle"] else 0.0
+        score += 0.25 * max(metrics["space_ratio"], metrics["nul_ratio"])
+        scores.append(score)
+    return sum(scores) / max(len(scores), 1)
 
-def last_hash(path):
-    if not path.exists():return 'GENESIS'
-    ls=[x for x in path.read_text(encoding='utf-8').splitlines() if x.strip()]
-    if not ls:return 'GENESIS'
-    try:return json.loads(ls[-1]).get('receipt_hash','GENESIS')
-    except:return 'GENESIS'
-def receipt(path,obj):
-    path.parent.mkdir(parents=True,exist_ok=True); prev=last_hash(path); body=dict(obj);body['previous_receipt_hash']=prev; rh=hashlib.sha256((prev+'|'+cj(body)).encode()).hexdigest();body['receipt_hash']=rh
-    with path.open('a',encoding='utf-8') as f:f.write(cj(body)+'\n')
-    return rh
-def memory(path,obj):
-    path.parent.mkdir(parents=True,exist_ok=True)
-    with path.open('a',encoding='utf-8') as f:f.write(cj(obj)+'\n')
-def save(m,path,meta):
-    path.parent.mkdir(parents=True,exist_ok=True);torch.save({'config':asdict(m.cfg),'state_dict':m.state_dict(),'metadata':meta},path)
-def append_replay(r,l,n):
-    z=r+b'\n'+l;return z[-n:] if len(z)>n else z
 
-def train(m,opt,acq,replay,a,device):
-    m.train();last=float('nan')
-    for _ in range(a.steps_per_file):
-        src=replay if replay and random.random()<a.replay_ratio else acq;x,y=batch(src,a.batch_size,a.context,device);z,_=m(x);loss=F.cross_entropy(z.reshape(-1,z.size(-1)),y.reshape(-1));opt.zero_grad(set_to_none=True);loss.backward();torch.nn.utils.clip_grad_norm_(m.parameters(),a.grad_clip);opt.step();last=float(loss/math.log(2))
+def dynamic_failure(panel: dict, rail_limit: float) -> tuple[bool, list[str]]:
+    reasons: list[str] = []
+    for prompt, row in panel.items():
+        for field in ("x", "r", "h", "q"):
+            rail = row["state"][field]["rail_095"]
+            if rail > rail_limit:
+                reasons.append(f"{field}_rail>{rail_limit:.2f}@{prompt}:{rail:.3f}")
+    return bool(reasons), reasons
+
+
+def validate_receipt_chain(path: Path) -> str:
+    if not path.exists():
+        return "GENESIS"
+    previous = "GENESIS"
+    with path.open("r", encoding="utf-8") as f:
+        for line_no, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"receipt ledger malformed at line {line_no}") from exc
+            recorded = obj.pop("receipt_hash", None)
+            if not recorded:
+                raise RuntimeError(f"receipt ledger missing receipt_hash at line {line_no}")
+            if obj.get("previous_receipt_hash") != previous:
+                raise RuntimeError(f"receipt ledger chain break at line {line_no}")
+            expected = hashlib.sha256((previous + "|" + canonical_json(obj)).encode("utf-8")).hexdigest()
+            if recorded != expected:
+                raise RuntimeError(f"receipt ledger hash mismatch at line {line_no}")
+            previous = recorded
+    return previous
+
+
+def write_receipt(path: Path, record: dict) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    previous = validate_receipt_chain(path)
+    body = dict(record)
+    body["previous_receipt_hash"] = previous
+    receipt_hash = hashlib.sha256((previous + "|" + canonical_json(body)).encode("utf-8")).hexdigest()
+    body["receipt_hash"] = receipt_hash
+    with path.open("a", encoding="utf-8") as f:
+        f.write(canonical_json(body) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+    # Fail closed if the append did not produce a valid chain.
+    if validate_receipt_chain(path) != receipt_hash:
+        raise RuntimeError("receipt ledger failed post-write validation")
+    return receipt_hash
+
+
+def append_memory(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(canonical_json(record) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def save_checkpoint(model: UDLM, path: Path, metadata: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"config": asdict(model.cfg), "state_dict": model.state_dict(), "metadata": metadata}, path)
+
+
+def load_checkpoint(path: Path, device: torch.device) -> UDLM:
+    payload = torch.load(path, map_location=device)
+    model = UDLM(UDLMConfig(**payload["config"])).to(device)
+    model.load_state_dict(payload["state_dict"])
+    return model
+
+
+def append_bank(bank: bytes, segment: bytes, max_bytes: int) -> bytes:
+    if max_bytes <= 0:
+        return b""
+    merged = bank + b"\n" + segment
+    return merged[-max_bytes:] if len(merged) > max_bytes else merged
+
+
+def train_candidate(model: UDLM, optimizer: torch.optim.Optimizer, acquisition: bytes, replay_train: bytes,
+                    args, device: torch.device) -> float:
+    model.train()
+    last = float("nan")
+    for _ in range(args.steps_per_file):
+        source = replay_train if replay_train and random.random() < args.replay_ratio else acquisition
+        x, y = _sample_batch(source, args.batch_size, args.context, device)
+        logits, _ = model(x)
+        loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+        optimizer.step()
+        last = float(loss.item() / math.log(2.0))
     return last
 
-def failure_class(ag,vg,rr,db,gr,a):
-    if not all(math.isfinite(v) for v in (ag,vg,rr,gr)):return 'DIAGNOSTIC_COVERAGE_GAP'
-    if db:return 'DYNAMIC_FAILURE'
-    if rr>a.hard_replay_regression:return 'RETENTION_FAILURE'
-    if gr>.20:return 'GENERATION_FAILURE'
-    if ag<=0:return 'ACQUISITION_FAILURE'
-    if vg<=0:return 'GENERALIZATION_FAILURE'
-    return 'DIAGNOSTIC_COVERAGE_GAP'
 
-def main():
-    ap=argparse.ArgumentParser();ap.add_argument('curriculum',type=Path);ap.add_argument('--checkpoint',type=Path,default=Path('artifacts/udlm_certified.pt'));ap.add_argument('--receipts',type=Path,default=Path('artifacts/udlm_certified_receipts.jsonl'));ap.add_argument('--capabilities',type=Path,default=Path('artifacts/udlm_capability_memory.jsonl'));ap.add_argument('--failures',type=Path,default=Path('artifacts/udlm_failure_memory.jsonl'));ap.add_argument('--held-dir',type=Path,default=Path('artifacts/held_candidates'));ap.add_argument('--report',type=Path,default=Path('artifacts/udlm_certified_report.json'));ap.add_argument('--steps-per-file',type=int,default=200);ap.add_argument('--batch-size',type=int,default=4);ap.add_argument('--context',type=int,default=128);ap.add_argument('--lr',type=float,default=.0015);ap.add_argument('--weight-decay',type=float,default=1e-4);ap.add_argument('--grad-clip',type=float,default=1.);ap.add_argument('--replay-ratio',type=float,default=.35);ap.add_argument('--replay-bytes',type=int,default=262144);ap.add_argument('--validation-fraction',type=float,default=.2);ap.add_argument('--min-acquisition-gain',type=float,default=.02);ap.add_argument('--min-validation-gain',type=float,default=.01);ap.add_argument('--max-replay-regression',type=float,default=.10);ap.add_argument('--hard-replay-regression',type=float,default=.25);ap.add_argument('--max-generation-regression',type=float,default=.12);ap.add_argument('--rail-limit',type=float,default=.90);ap.add_argument('--seed',type=int,default=1);ap.add_argument('--max-new-bytes',type=int,default=128);ap.add_argument('--device',default='cpu');a=ap.parse_args()
-    random.seed(a.seed);torch.manual_seed(a.seed);device=torch.device(a.device);m=UDLM(UDLMConfig()).to(device);opt=torch.optim.AdamW(m.parameters(),lr=a.lr,weight_decay=a.weight_decay);replay=b'';counts={'ADMIT':0,'HOLD':0,'REJECT':0};fs=files(a.curriculum)
-    print(f'UDLM certified learner | params={m.parameter_count():,} lessons={len(fs)}');print('observe -> candidate -> challenge -> ADMIT/HOLD/REJECT -> diagnose -> receipt')
-    for i,p in enumerate(fs,1):
-        lesson=p.read_bytes();rel=p.relative_to(a.curriculum).as_posix();acq,val=split(lesson,a.validation_fraction);ph=model_hash(m);ab=bpb(m,acq,a.context,device);vb=bpb(m,val,a.context,device);rb=bpb(m,replay,a.context,device) if len(replay)>=3 else None;pb=panel(m,a.max_new_bytes);d0=deg(pb);ms=copy.deepcopy(m.state_dict());os=copy.deepcopy(opt.state_dict());tl=train(m,opt,acq,replay,a,device);ch=model_hash(m);aa=bpb(m,acq,a.context,device);va=bpb(m,val,a.context,device);ra=bpb(m,replay,a.context,device) if len(replay)>=3 else None;pa=panel(m,a.max_new_bytes);d1=deg(pa);ag=ab-aa;vg=vb-va;rr=0. if rb is None or ra is None else ra-rb;gr=d1-d0;db,dr=dyn_bad(pa,a.rail_limit)
-        catastrophic=rr>a.hard_replay_regression or gr>.20 or db or not all(math.isfinite(v) for v in (aa,va,tl));admissible=ag>=a.min_acquisition_gain and vg>=a.min_validation_gain and rr<=a.max_replay_regression and gr<=a.max_generation_regression and not db
-        fc=None
-        if admissible: dec='ADMIT';counts[dec]+=1;replay=append_replay(replay,lesson,a.replay_bytes);memory(a.capabilities,{'kind':'udlm-capability-memory-v1','timestamp':time.time(),'lesson':rel,'candidate_hash':ch,'acquisition_gain_bpb':ag,'independent_validation_gain_bpb':vg,'retention_regression_bpb':rr,'generation_regression':gr,'evidence':'cross_sample_supported'})
-        elif not catastrophic and ag>0: dec='HOLD';counts[dec]+=1;fc=failure_class(ag,vg,rr,db,gr,a);save(m,a.held_dir/f'candidate_{i:04d}_{ch[:12]}.pt',{'status':'HELD','lesson':rel,'parent_hash':ph});m.load_state_dict(ms);opt.load_state_dict(os)
-        else: dec='REJECT';counts[dec]+=1;fc=failure_class(ag,vg,rr,db,gr,a);m.load_state_dict(ms);opt.load_state_dict(os)
-        if dec!='ADMIT':memory(a.failures,{'kind':'udlm-failure-memory-v1','timestamp':time.time(),'lesson':rel,'candidate_hash':ch,'failure_class':fc,'dynamic_reasons':dr,'acquisition_gain_bpb':ag,'independent_validation_gain_bpb':vg,'retention_regression_bpb':rr,'generation_regression':gr,'continuation_requirement':'localize with existing diagnostics before proposing structural repair' if fc=='DIAGNOSTIC_COVERAGE_GAP' else f'restore {fc.lower()} condition and reverify against parent capability'})
-        receipt(a.receipts,{'kind':'udlm-certified-learning-receipt-v1','timestamp':time.time(),'lesson_index':i,'lesson_path':rel,'lesson_sha256':shab(lesson),'parent_checkpoint_hash':ph,'candidate_checkpoint_hash':ch,'train_bpb_last':tl,'acquisition_bpb_before':ab,'acquisition_bpb_after':aa,'validation_bpb_before':vb,'validation_bpb_after':va,'replay_bpb_before':rb,'replay_bpb_after':ra,'generation_degeneration_before':d0,'generation_degeneration_after':d1,'dynamic_failure_reasons':dr,'decision':dec,'failure_class':fc,'counts':counts.copy()});print(f'[{i:03d}/{len(fs):03d}] {dec:6s} {rel} | acq {ab:.3f}->{aa:.3f} ({ag:+.3f}) val {vb:.3f}->{va:.3f} ({vg:+.3f}) retain {rr:+.3f} gen {gr:+.3f}')
-    fh=model_hash(m);save(m,a.checkpoint,{'trainer':'udlm-certified-learning-v1','counts':counts,'canonical_model_hash':fh,'last_receipt':last_hash(a.receipts)});fp=panel(m,a.max_new_bytes);a.report.parent.mkdir(parents=True,exist_ok=True);a.report.write_text(json.dumps({'canonical_model_hash':fh,'counts':counts,'generation_panel':fp,'last_receipt':last_hash(a.receipts)},indent=2,ensure_ascii=False),encoding='utf-8');print(f'saved {a.checkpoint} counts={counts}');[print(repr(k)+' -> '+repr(v['text'])) for k,v in fp.items()]
-if __name__=='__main__':main()
+def classify_failure(acquisition_gain: float, validation_gain: float, retention_regression: float,
+                     dynamic_bad: bool, generation_regression: float, args) -> str:
+    if not all(math.isfinite(v) for v in (acquisition_gain, validation_gain, retention_regression, generation_regression)):
+        return "DIAGNOSTIC_COVERAGE_GAP"
+    if dynamic_bad:
+        return "DYNAMIC_FAILURE"
+    if retention_regression > args.hard_replay_regression:
+        return "RETENTION_FAILURE"
+    if generation_regression > args.hard_generation_regression:
+        return "GENERATION_FAILURE"
+    if acquisition_gain <= 0.0:
+        return "ACQUISITION_FAILURE"
+    if validation_gain <= 0.0:
+        return "GENERALIZATION_FAILURE"
+    return "DIAGNOSTIC_COVERAGE_GAP"
+
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(description="UDLM certified learning runtime")
+    ap.add_argument("curriculum", type=Path)
+    ap.add_argument("--checkpoint", type=Path, default=Path("artifacts/udlm_certified.pt"))
+    ap.add_argument("--receipts", type=Path, default=Path("artifacts/udlm_certified_receipts.jsonl"))
+    ap.add_argument("--capabilities", type=Path, default=Path("artifacts/udlm_capability_memory.jsonl"))
+    ap.add_argument("--failures", type=Path, default=Path("artifacts/udlm_failure_memory.jsonl"))
+    ap.add_argument("--held-dir", type=Path, default=Path("artifacts/held_candidates"))
+    ap.add_argument("--report", type=Path, default=Path("artifacts/udlm_certified_report.json"))
+    ap.add_argument("--steps-per-file", type=int, default=200)
+    ap.add_argument("--batch-size", type=int, default=4)
+    ap.add_argument("--context", type=int, default=128)
+    ap.add_argument("--lr", type=float, default=0.0015)
+    ap.add_argument("--weight-decay", type=float, default=1e-4)
+    ap.add_argument("--grad-clip", type=float, default=1.0)
+    ap.add_argument("--replay-ratio", type=float, default=0.35)
+    ap.add_argument("--replay-bytes", type=int, default=262144)
+    ap.add_argument("--retention-bytes", type=int, default=262144)
+    ap.add_argument("--validation-fraction", type=float, default=0.20)
+    ap.add_argument("--min-acquisition-gain", type=float, default=0.02)
+    ap.add_argument("--min-validation-gain", type=float, default=0.01)
+    ap.add_argument("--max-replay-regression", type=float, default=0.10)
+    ap.add_argument("--hard-replay-regression", type=float, default=0.25)
+    ap.add_argument("--max-generation-regression", type=float, default=0.12)
+    ap.add_argument("--hard-generation-regression", type=float, default=0.20)
+    ap.add_argument("--rail-limit", type=float, default=0.90)
+    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--max-new-bytes", type=int, default=128)
+    ap.add_argument("--device", default="cpu")
+    return ap
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    if args.steps_per_file < 1 or args.batch_size < 1 or args.context < 1:
+        raise ValueError("steps_per_file, batch_size, and context must be positive")
+    if not 0.0 <= args.replay_ratio <= 1.0:
+        raise ValueError("replay_ratio must be in [0,1]")
+
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    device = torch.device(args.device)
+    model = UDLM(UDLMConfig()).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    replay_train = b""
+    retention_bank = b""
+    counts = {"ADMIT": 0, "HOLD": 0, "REJECT": 0}
+    lesson_files = curriculum_files(args.curriculum)
+    validate_receipt_chain(args.receipts)
+
+    print(f"UDLM certified learner | params={model.parameter_count():,} lessons={len(lesson_files)}")
+    print("observe -> candidate -> challenge -> ADMIT/HOLD/REJECT -> diagnose -> receipt")
+
+    for index, path in enumerate(lesson_files, 1):
+        lesson = path.read_bytes()
+        rel = path.relative_to(args.curriculum).as_posix()
+        acquisition, validation = split_lesson(lesson, args.validation_fraction)
+
+        parent_hash = model_hash(model)
+        acq_before = bpb(model, acquisition, args.context, device)
+        val_before = bpb(model, validation, args.context, device)
+        retention_before = bpb(model, retention_bank, args.context, device) if len(retention_bank) >= 3 else None
+        before_panel = generation_panel(model, args.max_new_bytes)
+        degeneration_before = panel_degeneration(before_panel)
+
+        model_snapshot = copy.deepcopy(model.state_dict())
+        optimizer_snapshot = copy.deepcopy(optimizer.state_dict())
+        train_last = train_candidate(model, optimizer, acquisition, replay_train, args, device)
+        candidate_hash = model_hash(model)
+
+        acq_after = bpb(model, acquisition, args.context, device)
+        val_after = bpb(model, validation, args.context, device)
+        retention_after = bpb(model, retention_bank, args.context, device) if len(retention_bank) >= 3 else None
+        after_panel = generation_panel(model, args.max_new_bytes)
+        degeneration_after = panel_degeneration(after_panel)
+
+        acquisition_gain = acq_before - acq_after
+        validation_gain = val_before - val_after
+        retention_regression = 0.0 if retention_before is None or retention_after is None else retention_after - retention_before
+        generation_regression = degeneration_after - degeneration_before
+        dynamic_bad, dynamic_reasons = dynamic_failure(after_panel, args.rail_limit)
+
+        finite = all(math.isfinite(v) for v in (acq_after, val_after, train_last, acquisition_gain, validation_gain,
+                                                 retention_regression, generation_regression))
+        catastrophic = (
+            not finite
+            or retention_regression > args.hard_replay_regression
+            or generation_regression > args.hard_generation_regression
+            or dynamic_bad
+        )
+        admissible = (
+            finite
+            and acquisition_gain >= args.min_acquisition_gain
+            and validation_gain >= args.min_validation_gain
+            and retention_regression <= args.max_replay_regression
+            and generation_regression <= args.max_generation_regression
+            and not dynamic_bad
+        )
+
+        failure_class = None
+        if admissible:
+            decision = "ADMIT"
+            counts[decision] += 1
+            # Only acquisition bytes enter replay. Held-out validation bytes enter
+            # a separate retention bank and are never replay-trained.
+            replay_train = append_bank(replay_train, acquisition, args.replay_bytes)
+            retention_bank = append_bank(retention_bank, validation, args.retention_bytes)
+            append_memory(args.capabilities, {
+                "kind": "udlm-capability-memory-v2",
+                "timestamp": time.time(),
+                "lesson": rel,
+                "candidate_hash": candidate_hash,
+                "acquisition_gain_bpb": acquisition_gain,
+                "heldout_validation_gain_bpb": validation_gain,
+                "retention_regression_bpb": retention_regression,
+                "generation_regression": generation_regression,
+                "evidence": "within_source_heldout_supported",
+            })
+        elif not catastrophic and acquisition_gain > 0.0:
+            decision = "HOLD"
+            counts[decision] += 1
+            failure_class = classify_failure(acquisition_gain, validation_gain, retention_regression,
+                                             dynamic_bad, generation_regression, args)
+            save_checkpoint(model, args.held_dir / f"candidate_{index:04d}_{candidate_hash[:12]}.pt", {
+                "status": "HELD", "lesson": rel, "parent_hash": parent_hash,
+            })
+            model.load_state_dict(model_snapshot)
+            optimizer.load_state_dict(optimizer_snapshot)
+        else:
+            decision = "REJECT"
+            counts[decision] += 1
+            failure_class = classify_failure(acquisition_gain, validation_gain, retention_regression,
+                                             dynamic_bad, generation_regression, args)
+            model.load_state_dict(model_snapshot)
+            optimizer.load_state_dict(optimizer_snapshot)
+
+        if decision != "ADMIT":
+            append_memory(args.failures, {
+                "kind": "udlm-failure-memory-v2",
+                "timestamp": time.time(),
+                "lesson": rel,
+                "candidate_hash": candidate_hash,
+                "failure_class": failure_class,
+                "dynamic_reasons": dynamic_reasons,
+                "acquisition_gain_bpb": acquisition_gain,
+                "heldout_validation_gain_bpb": validation_gain,
+                "retention_regression_bpb": retention_regression,
+                "generation_regression": generation_regression,
+                "continuation_requirement": (
+                    "localize with existing diagnostics before proposing structural repair"
+                    if failure_class == "DIAGNOSTIC_COVERAGE_GAP"
+                    else f"restore {failure_class.lower()} condition and reverify against parent capability"
+                ),
+            })
+
+        write_receipt(args.receipts, {
+            "kind": "udlm-certified-learning-receipt-v2",
+            "timestamp": time.time(),
+            "lesson_index": index,
+            "lesson_path": rel,
+            "lesson_sha256": sha256_bytes(lesson),
+            "parent_checkpoint_hash": parent_hash,
+            "candidate_checkpoint_hash": candidate_hash,
+            "train_bpb_last": train_last,
+            "acquisition_bpb_before": acq_before,
+            "acquisition_bpb_after": acq_after,
+            "heldout_validation_bpb_before": val_before,
+            "heldout_validation_bpb_after": val_after,
+            "retention_bpb_before": retention_before,
+            "retention_bpb_after": retention_after,
+            "generation_degeneration_before": degeneration_before,
+            "generation_degeneration_after": degeneration_after,
+            "dynamic_failure_reasons": dynamic_reasons,
+            "decision": decision,
+            "failure_class": failure_class,
+            "counts": counts.copy(),
+        })
+        print(
+            f"[{index:03d}/{len(lesson_files):03d}] {decision:6s} {rel} | "
+            f"acq {acq_before:.3f}->{acq_after:.3f} ({acquisition_gain:+.3f}) "
+            f"heldout {val_before:.3f}->{val_after:.3f} ({validation_gain:+.3f}) "
+            f"retain {retention_regression:+.3f} gen {generation_regression:+.3f}"
+        )
+
+    final_hash = model_hash(model)
+    tail = validate_receipt_chain(args.receipts)
+    save_checkpoint(model, args.checkpoint, {
+        "trainer": "udlm-certified-learning-v2",
+        "counts": counts,
+        "canonical_model_hash": final_hash,
+        "last_receipt": tail,
+        "validation_semantics": "disjoint within-source heldout; heldout bytes excluded from replay training",
+    })
+    final_panel = generation_panel(model, args.max_new_bytes)
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_text(json.dumps({
+        "canonical_model_hash": final_hash,
+        "counts": counts,
+        "generation_panel": final_panel,
+        "last_receipt": tail,
+        "validation_semantics": "disjoint within-source heldout; heldout bytes excluded from replay training",
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    print(f"saved {args.checkpoint} counts={counts}")
+    for prompt, row in final_panel.items():
+        print(repr(prompt) + " -> " + repr(row["text"]))
+
+
+if __name__ == "__main__":
+    main()
