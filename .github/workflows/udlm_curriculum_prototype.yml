@@ -161,6 +161,32 @@ jobs:
           print('RPAIR tomography conflict_families=',sorted(t['families_with_conflicts']))
           PY
 
+      - name: Run matched C3 plasticity localization test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m udlm.rpair_c3_localization_test artifacts/stage_frozen \
+            --failed-stage C3 --steps 200 --batch-size 4 --context 128 --lr 0.0015 \
+            --replay-ratio 0.35 --validation-fraction 0.20 --max-retention-regression 0.10 \
+            --max-generation-regression 0.12 --min-acquisition-gain 0.02 --min-validation-gain 0.01 \
+            --min-behavior-accuracy 0.55 --min-behavior-gain 0.05 --rail-limit 0.90 \
+            --max-new-bytes 128 --seeds 301,302,303 --device cpu
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('artifacts/stage_frozen'); p=root/'C3'/'rpair_c3_localization_summary.json'
+          s=json.loads(p.read_text()); mpath=root/'C3'/'manifest.json'; m=json.loads(mpath.read_text()); raw=p.read_bytes()
+          m['files']['rpair_c3_localization_summary.json']={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+          m['rpair_c3_localization']={'interpretation':s['interpretation'],'parent_parameter_count':s['parent_parameter_count'],
+              'qr_added_parameters':s['architecture_checks']['qr_reserve']['added_parameter_count'],
+              'non_qr_added_parameters':s['architecture_checks']['non_qr_reserve']['added_parameter_count'],
+              'qr_core_passes':s['aggregates']['qr_reserve']['core_integration_pass_count'],
+              'non_qr_core_passes':s['aggregates']['non_qr_reserve']['core_integration_pass_count']}
+          mpath.write_text(json.dumps(m,indent=2,sort_keys=True))
+          print('C3 localization=',s['interpretation'])
+          print('C3 localization aggregates=',json.dumps(s['aggregates'],sort_keys=True))
+          PY
+
       - name: Validate frozen stage artifacts
         shell: bash
         run: |
@@ -200,7 +226,7 @@ jobs:
           root=pathlib.Path('artifacts'); root.mkdir(parents=True,exist_ok=True); files={}
           for p in sorted(root.rglob('*')):
               if p.is_file(): files[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
-          manifest={'kind':'udlm-certified-stage-frozen-build-v5-rpair-interference-tomography','engine':'UDLM-v0.1 homeostatic payload/routing dynamics','training_policy':'C0-C8 stage-frozen certified curriculum','progression_policy':'next stage only after ADMIT','rpair_policy':'diagnose -> replay repair -> plasticity repair -> gradient interference tomography; no automatic promotion','validation_semantics':'heldout bytes are evaluation-only','git_sha':os.environ.get('GITHUB_SHA'),'built_at_unix':time.time(),'files':files}
+          manifest={'kind':'udlm-certified-stage-frozen-build-v6-c3-matched-localization','engine':'UDLM-v0.1 homeostatic payload/routing dynamics','training_policy':'C0-C8 stage-frozen certified curriculum','progression_policy':'next stage only after ADMIT','rpair_policy':'diagnose -> replay repair -> plasticity repair -> gradient tomography -> matched Q/R vs non-Q/R reserve localization; no automatic promotion','validation_semantics':'heldout bytes are evaluation-only; matched expansions verify pretraining neutrality and reserve gradient access','git_sha':os.environ.get('GITHUB_SHA'),'built_at_unix':time.time(),'files':files}
           (root/'manifest.json').write_text(json.dumps(manifest,indent=2))
           PY
 
