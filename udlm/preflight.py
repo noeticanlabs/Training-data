@@ -20,6 +20,8 @@ from .run_certified import (
     write_receipt,
 )
 
+AUDIT_VERSION = "certified-learning-v2"
+
 
 class Args:
     steps_per_file = 2
@@ -37,7 +39,7 @@ def main() -> None:
     if original != model_hash(model):
         raise SystemExit("preflight failed: model hash is not deterministic")
 
-    probe = (b"Language is a structured sequence of symbols and relations. " * 8)
+    probe = b"Language is a structured sequence of symbols and relations. " * 8
     score = bpb(model, probe, 32, device)
     if not torch.isfinite(torch.tensor(score)):
         raise SystemExit("preflight failed: BPB is non-finite")
@@ -69,7 +71,6 @@ def main() -> None:
         if model_hash(loaded) != changed:
             raise SystemExit("preflight failed: checkpoint round-trip changed model hash")
 
-        # Corruption must fail closed rather than silently restarting at GENESIS.
         with ledger.open("a", encoding="utf-8") as f:
             f.write('{"broken":true}\n')
         try:
@@ -83,7 +84,7 @@ def main() -> None:
     if model_hash(model) != original:
         raise SystemExit("preflight failed: state rollback did not restore parent")
 
-    print("UDLM certified-learning preflight: PASS")
+    print(f"UDLM certified-learning preflight: PASS ({AUDIT_VERSION})")
     print(f"parameters={model.parameter_count():,} initial_bpb={score:.4f}")
 
 
