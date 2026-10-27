@@ -1,0 +1,471 @@
+{
+  "schema_version": "nels.grades.v0.2",
+  "repo_role": "teacher_side_training_data_only",
+  "qualification_status": "unpromoted_not_certified",
+  "grade_count": 10,
+  "world_count": 30,
+  "exam_policy": {
+    "split_names": [
+      "train",
+      "validation",
+      "untouched_test"
+    ],
+    "group_by": [
+      "mechanism_family",
+      "world_generator_family",
+      "artifact_family"
+    ],
+    "private_external_exam_required": true,
+    "no_teacher_exam_signing": true,
+    "no_student_exam_seed_access": true,
+    "note": "Prototype GradeSession offers only synthetic teacher-local train/exam for functional demonstration; genuine source-family isolation is future work."
+  },
+  "evidence_policy": {
+    "data_class": "simulation_candidate",
+    "physical_evidence_authority": false,
+    "paid_observation_authority": false,
+    "learner_canonical_memory_mutation": false,
+    "receipts": "non_authoritative_hash_linked",
+    "retention_requires_external_recovery_witness": true
+  },
+  "grades": [
+    {
+      "id": "G0",
+      "name": "Observation",
+      "objective": "Distinguish objects, events, and changing states",
+      "core_capability": "object_event_differentiation",
+      "worlds": [
+        {
+          "id": "G0-W1",
+          "slug": "workshop-counter",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G0-W2",
+          "slug": "hallway-beacon",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G0-W3",
+          "slug": "weather-station",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Demonstrate change/no-change detection on unseen object/event families; include perceptual noise and no-op controls.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G1",
+      "name": "Relationships",
+      "objective": "Identify relations and persistent identities",
+      "core_capability": "identity_and_relation_tracking",
+      "worlds": [
+        {
+          "id": "G1-W1",
+          "slug": "inventory-tracker",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G1-W2",
+          "slug": "parcel-relay",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G1-W3",
+          "slug": "moving-tags",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G0"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Track persistent native identity across rename, movement and relabeling; avoid identity collisions.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G2",
+      "name": "Causality",
+      "objective": "Learn action-consequence relationships",
+      "core_capability": "controlled_interventions",
+      "worlds": [
+        {
+          "id": "G2-W1",
+          "slug": "switchboard",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G2-W2",
+          "slug": "valve-bench",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G2-W3",
+          "slug": "relay-grid",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G1"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Infer which variables cause a change from interventions; distinguish causation from correlation.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G3",
+      "name": "Prediction",
+      "objective": "Predict outcomes in unfamiliar situations",
+      "core_capability": "unseen_dynamics",
+      "worlds": [
+        {
+          "id": "G3-W1",
+          "slug": "conveyor-cycle",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G3-W2",
+          "slug": "moving-cart",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G3-W3",
+          "slug": "signal-timer",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G2"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Predict unseen transitions with accuracy above unchanged and random baselines, and report uncertainty.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G4",
+      "name": "Memory",
+      "objective": "Retain and reconstruct acquired knowledge",
+      "core_capability": "checkpointed_native_retention",
+      "worlds": [
+        {
+          "id": "G4-W1",
+          "slug": "supply-cache",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G4-W2",
+          "slug": "artifact-index",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G4-W3",
+          "slug": "room-map",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G3"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Recover acquired knowledge after verified full learner-process termination, checkpoint restore and unrelated training.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G5",
+      "name": "Generalization",
+      "objective": "Transfer learned mechanisms between worlds",
+      "core_capability": "cross_world_mechanism_transfer",
+      "worlds": [
+        {
+          "id": "G5-W1",
+          "slug": "mechanism-transfer",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G5-W2",
+          "slug": "control-panel",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G5-W3",
+          "slug": "renamed-buttons",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G4"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Transfer mechanisms to renamed, reparameterized and source-family-separated worlds; reject negative transfer.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G6",
+      "name": "Language",
+      "objective": "Connect human expressions to native world representations",
+      "core_capability": "bidirectional_grounded_language",
+      "worlds": [
+        {
+          "id": "G6-W1",
+          "slug": "instruction-bridge",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G6-W2",
+          "slug": "spatial-language",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G6-W3",
+          "slug": "action-phrases",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G5"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Map expression to typed native relations and back while abstaining on ambiguous or unsupported reference.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G7",
+      "name": "Reasoning",
+      "objective": "Solve multistep problems with acquired knowledge",
+      "core_capability": "goal_directed_multistep_reasoning",
+      "worlds": [
+        {
+          "id": "G7-W1",
+          "slug": "locked-workshop",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G7-W2",
+          "slug": "tool-sequence",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G7-W3",
+          "slug": "maintenance-route",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G6"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Construct and revise plans, execute lawful steps, check goals and handle invalid actions without overclaiming success.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G8",
+      "name": "Adaptation",
+      "objective": "Detect contradictions and revise knowledge without destructive regression",
+      "core_capability": "contradiction_repair_no_regression",
+      "worlds": [
+        {
+          "id": "G8-W1",
+          "slug": "changing-controls",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G8-W2",
+          "slug": "faulty-sensor",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G8-W3",
+          "slug": "reversed-switch",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G7"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Recognize mechanism shifts, localize revisions, retain valid old context and quantify regressions.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    },
+    {
+      "id": "G9",
+      "name": "Autonomy",
+      "objective": "Identify knowledge gaps and pursue bounded learning objectives",
+      "core_capability": "bounded_self_directed_learning",
+      "worlds": [
+        {
+          "id": "G9-W1",
+          "slug": "research-lab",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G9-W2",
+          "slug": "repair-diagnosis",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        },
+        {
+          "id": "G9-W3",
+          "slug": "budgeted-experiment",
+          "phase": "prototype",
+          "seeds": "teacher_controlled",
+          "exam_source_family_separated": false
+        }
+      ],
+      "pre_requisites": [
+        "G8"
+      ],
+      "graduation_gate": {
+        "require_holdout": true,
+        "require_real_native_state_change": true,
+        "require_restart_retention": true,
+        "require_wrong_transfer_refusal": true,
+        "require_regression_control": true,
+        "require_external_signing": true,
+        "threshold_status": "not_calibrated",
+        "promotion_policy": "blocked_until_independent_qualification"
+      },
+      "independent_exam_requirements": "Identify gaps, select discriminating safe experiments within budgets, stop appropriately and request external qualification.",
+      "current_evidence": "teacher_side_mechanics_only_not_learned_or_certified"
+    }
+  ]
+}

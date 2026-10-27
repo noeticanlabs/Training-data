@@ -1,0 +1,1 @@
+"""Schooling laboratory tests."""
