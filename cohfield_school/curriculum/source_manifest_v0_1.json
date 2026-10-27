@@ -1,0 +1,45 @@
+{
+  "schema_version": "nels-source-manifest-v0.1",
+  "status": "source_discovery_only_not_imported_not_certified",
+  "source_repositories": [
+    {
+      "name": "Cohbit-Copilot",
+      "repository": "noeticanlabs/Cohbit-Copilot",
+      "commit": "cbac744d3917c3ade4da9225c3845daa98840b95",
+      "paths": [
+        "fixtures/language_gradeschool/v0_6_l6_meaning/",
+        "fixtures/language_gradeschool/v0_7_l7_reference/",
+        "fixtures/language_gradeschool/v0_8_l8_context/",
+        "src/noetican_grades/",
+        "src/school_runtime/"
+      ],
+      "use": "candidate_curriculum_only_no_pretrained_capability_transfer"
+    },
+    {
+      "name": "CohField",
+      "repository": "noeticanlabs/CohField",
+      "commit": "b37026b9e8194f6ee817e7599e7e41170f49026d",
+      "branch": "build/native-cohfield-unified-integration",
+      "paths": [
+        "native_rebuild/cohfield_native/",
+        "native_rebuild/qualification/"
+      ],
+      "use": "future_adapter_contract_only_no_runtime_modifications"
+    }
+  ],
+  "sample_lab": {
+    "code": "cohfield_school/world.py",
+    "grade": "NELS-001",
+    "purpose": "intervention_protocol_only",
+    "independent_exam": false,
+    "retention_test": false,
+    "certifiable": false
+  },
+  "data_policy": {
+    "default_admission": "pending_review",
+    "no_raw_conversation_import": true,
+    "preserve_source_lineage": true,
+    "never_use_test_unseen_for_training": true,
+    "redact_sensitive_content_before_any_public_export": true
+  }
+}
